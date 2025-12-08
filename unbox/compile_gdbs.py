@@ -12,6 +12,11 @@ class GDBMerge(object):
         Given a folder of zipped LightBox FGDB delivery files split by FIPS codes, merges them all into a single FGDB
     """
 
+    """
+        Create a test package in the root of the project and add a test for instantiation of this class
+    """
+
+
     input_folder = None
     temp_folder = None
     output_gdb_path = None
@@ -23,6 +28,8 @@ class GDBMerge(object):
     zips_by_size = list()
 
     table_names = list()
+
+    _create_indexes = True
 
     ATTRIBUTED_RELATIONSHIPS = [
         {
@@ -104,12 +111,15 @@ class GDBMerge(object):
             self.move_largest_to_output()
         self.get_source_tables()
 
-        self.create_indexes()  # we want this before we merge everything - it can help with the relationship classes
-        self._handle_attributed_relationships()
         self.append_all_gdbs()
 
-        self.recreate_spatial_indexes() # we want this after the append so that the optimal grid size gets recalculated and the index is rebuilt
-        self.create_relationship_classes()  # this may end up going away or moving because we might build them differently
+        if self._create_indexes:
+            self.create_indexes()  # Our ideal is for this to happen after the appends and before the relationship classes. If we go back to manual relationship class creation, we'll need to move this step back up'
+            self.recreate_spatial_indexes() # we want this after the append so that the optimal grid size gets recalculated and the index is rebuilt
+
+        self._handle_attributed_relationships()
+
+        #self.create_relationship_classes()  # this may end up going away or moving because we might build them differently
 
         self.cleanup()
 
@@ -173,6 +183,9 @@ class GDBMerge(object):
                 arcpy.management.Append(input_data, os.path.join(self.output_gdb_path, dataset))
 
     def create_relationship_classes(self):
+        """
+            Warning - this isn't likely the best way to go about this.
+        """
         with arcpy.EnvManager(workspace=self.output_gdb_path):
             arcpy.management.CreateRelationshipClass(
                 origin_table=r"Parcels",
@@ -195,17 +208,22 @@ class GDBMerge(object):
             #arcpy.analysis.Intersect(parcel_layers[skip:], "county_overlaps")
 
     def _handle_attributed_relationships(self):
-        return
-        arcpy.management.TableToRelationshipClass(self.output_gdb_path,
+        with arcpy.EnvManager(workspace=self.output_gdb_path):
+            for config in self.ATTRIBUTED_RELATIONSHIPS:
+
+                att_field_names = [field.name.lower() for field in arcpy.ListFields(config["RelationName"]) if field.name.lower() not in ("objectid", "parcel_lid", "address_lid", "assessment_lid", "building_lid", "fips_code")]
+
+                arcpy.management.TableToRelationshipClass(
                     origin_table=config["Origin"],
                     destination_table=config["Destination"],
-                    out_relationship_class=config["RelationName"],
+                    out_relationship_class=f"rc_{config['RelationName']}",
                     relationship_type="SIMPLE",
                     forward_label=config["Destination"],
                     backward_label=config["Origin"],
                     message_direction="NONE",
                     cardinality=config["Cardinality"],
-                    attributed="ATTRIBUTED",
+                    relationship_table=config["RelationName"],
+                    attribute_fields=att_field_names,
                     origin_primary_key=config["OriginKey"],
                     origin_foreign_key=config["OriginKey"],
                     destination_primary_key=config["DestinationKey"],
