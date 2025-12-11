@@ -9,10 +9,10 @@ import logging
 
 # Note that Nate indicated he'd be interested in a pipeline for the stripped down version that can be used publicly so they don't process it
 # What do they need in terms of indexing?
-# People often have the TAXAPN - Making a copied attribute and keeping it as string but removing the dashes is useful and helps for joining in external data.
+# FOLLOW UP WITH JEFF People often have the TAXAPN - Making a copied attribute and keeping it as string but removing the dashes is useful and helps for joining in external data.
 # Add some metadata - make sure to include a statement of appropriate use - also do this for city/county (or label the existing info that way.
+# Follow up with Jeff about Hexagon tile index
 
-# Ask about offline syncing with Dan
 # Also, what constitutes public use of data as far as the contract is concerned?
 
 class GDBMerge(object):
@@ -51,7 +51,7 @@ class GDBMerge(object):
             "Cardinality": "MANY_TO_MANY",
         },
         {
-            "RelationName": "BuildingParcelRelation",
+            "RelationName": "BuildingAssessmentRelation",
             "TempName": "BAR",
             "Origin": "Buildings",
             "Destination": "Assessments",
@@ -99,26 +99,22 @@ class GDBMerge(object):
             "message_direction": "NONE",
             "cardinality": "ONE_TO_MANY",
             "attributed": "NONE",
+            "relationship_type": "SIMPLE"
     }
     ONETOMANY_RELATIONSHIPS = [
         {
             "out_relationship_class": "ParcelAssessments",
             "origin_table": "Parcels",
             "destination_table": "Assessments",
-            "origin_primary_key": "PARCEL_LID",
+            "origin_primary_key": "parcel_lid",
             "origin_foreign_key": "PARCEL_LID",
             "forward_label": "Assessments",
             "backward_label": "Parcels"
         },
-        {
-            "out_relationship_class": "ParcelAssessments",
-            "origin_table": "Parcels",
-            "destination_table": "Assessments",
-            "origin_primary_key": "PARCEL_LID",
-            "origin_foreign_key": "PARCEL_LID",
-            "forward_label": "Assessments",
-            "backward_label": "Parcels"
-        },
+        """
+            Turns out ArcGIS won't let us make a relationship class with the same origin/destination. We'll need to likely
+            copy these records out to another table if we want to traverse them with a relationship class
+             
         {
             "out_relationship_class": "AddressParent",
             "origin_table": "Addresses",
@@ -137,41 +133,18 @@ class GDBMerge(object):
             "forward_label": "secondary_addresses",
             "backward_label": "primary_address"
         },
-
+        """
     ]
 
-    ATTRIBUTE_INDEXES = [
-        # Table, Field
+    KEY_INDEXES = [
         ("Parcels", "Parcel_LID"),
-        ("Parcels", "FIPS_CODE"),
-        ("Parcels", "PRIMARY_ASSESSMENT_LID"),
-        ("Parcels", "PRIMARY_BUILDING_LID"),
         ("Buildings", "building_lid"),
-        ("Buildings", "FIPS_CODE"),
-        ("Buildings", "county"),
-        ("Buildings", "area_sqft"),
         ("Buildings", "primary_address_lid"),
         ("Buildings", "primary_parcel_lid"),
         ("Addresses", "address_lid"),
-        ("Addresses", "FIPS_CODE"),
-        ("Addresses", "county"),
-        ("Addresses", "city"),
-        ("Addresses", "zip"),
-        ("Addresses", "resbus_usps"),
-        ("Addresses", "precision_code"),
-        ("Addresses", "address_confidence_score"),
-        ("Addresses", "is_primary_address"),
-        ("Addresses", "primary_address_lid"),
-        ("Addresses", "parent_address_lid"),
         ("Assessments", "ASSESSMENT_LID"),
-        ("Assessments", "FIPS_CODE"),
-        ("Assessments", "PARCEL_LID"),
-        ("Assessments", "PARCEL_APN"),
-        ("Assessments", "TAXAPN"),
         ("BuildingParcelRelation", "PARCEL_LID"),
         ("BuildingParcelRelation", "building_lid"),
-        ("BuildingParcelRelation", "building_overlap_ratio"),
-        ("BuildingParcelRelation", "parcel_overlap_ratio"),
 
         # The following relations aren't attributed, so we can create relationship classes without moving anything around and only need to index the keys
         ("AddressAssessmentRelation", "address_lid"),
@@ -184,6 +157,32 @@ class GDBMerge(object):
         ("BuildingAssessmentRelation", "assessment_lid"),
         ("ParcelAssessmentRelation", "ASSESSMENT_LID"),
         ("ParcelAssessmentRelation", "PARCEL_LID"),
+    ]
+
+    ATTRIBUTE_INDEXES = [
+        # Table, Field
+        ("Parcels", "FIPS_CODE"),
+        ("Parcels", "PRIMARY_ASSESSMENT_LID"),
+        ("Parcels", "PRIMARY_BUILDING_LID"),
+        ("Buildings", "FIPS_CODE"),
+        ("Buildings", "county"),
+        ("Buildings", "area_sqft"),
+        ("Addresses", "FIPS_CODE"),
+        ("Addresses", "county"),
+        ("Addresses", "city"),
+        ("Addresses", "zip"),
+        ("Addresses", "resbus_usps"),
+        ("Addresses", "precision_code"),
+        ("Addresses", "address_confidence_score"),
+        ("Addresses", "is_primary_address"),
+        ("Addresses", "primary_address_lid"),
+        ("Addresses", "parent_address_lid"),
+        ("Assessments", "FIPS_CODE"),
+        ("Assessments", "PARCEL_LID"),
+        ("Assessments", "PARCEL_APN"),
+        ("Assessments", "TAXAPN"),
+        ("BuildingParcelRelation", "building_overlap_ratio"),
+        ("BuildingParcelRelation", "parcel_overlap_ratio"),
     ]
 
     SPATIAL_INDEXES = ["Parcels", "Buildings", "Addresses", "Assessments"]
@@ -225,17 +224,22 @@ class GDBMerge(object):
             self.move_largest_to_output()
         self.get_source_tables()
 
+        self.create_indexes(self.KEY_INDEXES)  # add indexes to just the key attributes now to support creating the relationship classes better. We'll index everything else at the end
         self._handle_manytomany_relationships()  # when we use our method, this should happen first. If we use Esri's builtin, it should be last.
 
         self.append_all_gdbs()
 
         if self._create_indexes:
-            self.create_indexes()  # Our ideal is for this to happen after the appends and before the relationship classes. Since we're building relationship classes manually, this now happens last, except for non-attributed relationships
+            self.create_indexes(drop_first=True)  # Our ideal is for this to happen after the appends and before the relationship classes. Since we're building relationship classes manually, this now happens last, except for non-attributed relationships
             self.recreate_spatial_indexes() # we want this after the append so that the optimal grid size gets recalculated and the index is rebuilt
 
         self.create_relationship_classes()  # Make the simpler relationship classes that we can build at the end now.
 
         self.cleanup()
+
+    def _bypass_merge(self):
+        self._get_zip_sizes()
+        self.get_source_tables()
 
     def _get_zip_sizes(self):
         self.zips = [os.path.join(self.input_folder, z) for z in os.listdir(str(self.input_folder)) if z.endswith(".zip")]
@@ -278,10 +282,17 @@ class GDBMerge(object):
             tables = arcpy.ListTables()
             self.table_names = features + tables
 
-    def create_indexes(self):
+    def create_indexes(self, indexes=None, drop_first=False):
+        if indexes is None:
+            indexes = self.KEY_INDEXES + self.ATTRIBUTE_INDEXES
+
         with arcpy.EnvManager(workspace=self.output_gdb_path):
-            for table, field in self.ATTRIBUTE_INDEXES:
+            for table, field in indexes:  # it's a tuple, not a dict - 0 is table, 1 is field
                 logging.info(f"Creating index on {table}.{field}")
+
+                if drop_first:
+                    arcpy.management.RemoveIndex(table, f"idx_{field}")
+
                 arcpy.management.AddIndex(table, field, f"idx_{field}")
 
     def recreate_spatial_indexes(self):
@@ -305,6 +316,9 @@ class GDBMerge(object):
             for rel in self.ONETOMANY_RELATIONSHIPS:
                 rel = {**rel, **self.ONETOMANY_RELATIONSHIP_COMMON}  # merge in the common items
                 rel["out_relationship_class"] = self.ONETOMANY_RELATIONSHIPS_PREFIX + rel["out_relationship_class"]
+                #rel["origin_table"] = os.path.join(self.output_gdb_path, rel["origin_table"])
+                #rel["destination_table"] = os.path.join(self.output_gdb_path, rel["destination_table"])
+                print(rel)
                 arcpy.management.CreateRelationshipClass(**rel)
 
     def generate_overlaps(self, skip=0):
@@ -372,21 +386,18 @@ class GDBMerge(object):
                     destination_foreign_key=config["DestinationKey"],
                 )
 
-                if config["Attributed"] == "ATTRIBUTED":  # for simple many to manys, we don't need to add fields.
-                    logging.info("Adding attributes to Many to Many Relationship Class")
-                    # Get all attributes in the temp table
-                    all_fields = arcpy.ListFields(config["TempName"])
-                    existing_fields = arcpy.ListFields(config["RelationName"])
-                    existing_field_names = [field.name.lower() for field in existing_fields]
-                    fields = [field for field in all_fields if (field.name.lower() not in existing_field_names) and (field.name != "OBJECTID")]  # just use the fields that don't already exist on the relation
+                logging.info("Adding attributes to Many to Many Relationship Class")
+                # Get all attributes in the temp table
+                all_fields = arcpy.ListFields(config["TempName"])
+                existing_fields = arcpy.ListFields(config["RelationName"])
+                existing_field_names = [field.name.lower() for field in existing_fields]
+                fields = [field for field in all_fields if (field.name.lower() not in existing_field_names) and (field.name != "OBJECTID")]  # just use the fields that don't already exist on the relation
 
-                    # Add them to the relationship class
-                    additions = [[field.name, field.type, field.aliasName, field.length, field.defaultValue, field.precision, field.scale, field.isNullable, field.required] for field in fields]
-                    #print(additions)
-                    #arcpy.management.AddFields(config["RelationName"], additions)
-                    for addition in additions:
-                    #    print(addition[0])
-                        arcpy.management.AddField(config["RelationName"], addition[0], addition[1], field_alias=addition[2], field_length=addition[3], field_is_nullable=addition[7], field_is_required=addition[8])
+                # Add them to the relationship class
+                additions = [[field.name, field.type, field.aliasName, field.length, field.defaultValue, field.precision, field.scale, field.isNullable, field.required] for field in fields]
+
+                for addition in additions:
+                    arcpy.management.AddField(config["RelationName"], addition[0], addition[1], field_alias=addition[2], field_length=addition[3], field_is_nullable=addition[7], field_is_required=addition[8])
 
                 logging.info("Filling Many to Many Relationship Class with initial data")
                 # Append the records - after we migrate the ones here in, everything else should append normally, but they'll have to skip the RID attribute
