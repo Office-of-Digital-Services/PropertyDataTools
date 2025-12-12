@@ -8,8 +8,8 @@ def list_get(l, idx, default=None):
     except IndexError:
         return default
 
-count = list_get(sys.argv, 1, default=300)
-sleep_duration = list_get(sys.argv, 2, default=60)
+count = int(list_get(sys.argv, 1, default=300))
+sleep_duration = int(list_get(sys.argv, 2, default=60))
 directory = list_get(sys.argv, 3, r"C:\Users\nick.santos\Downloads\LBX_Delivery_20251015\PROFESSIONAL_FGDB\full_state_smartfabric.gdb")
 i = 0
 while i < count:

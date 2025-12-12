@@ -3,6 +3,7 @@ import tempfile
 import zipfile  # this is probably slower than extracting beforehand
 import shutil
 
+import arcgisscripting
 import arcpy
 
 import logging
@@ -11,7 +12,7 @@ import logging
 # What do they need in terms of indexing?
 # FOLLOW UP WITH JEFF People often have the TAXAPN - Making a copied attribute and keeping it as string but removing the dashes is useful and helps for joining in external data.
 # Add some metadata - make sure to include a statement of appropriate use - also do this for city/county (or label the existing info that way.
-# Follow up with Jeff about Hexagon tile index
+# probably want to run a compact at the end of things
 
 # Also, what constitutes public use of data as far as the contract is concerned?
 
@@ -185,6 +186,12 @@ class GDBMerge(object):
         ("BuildingParcelRelation", "parcel_overlap_ratio"),
     ]
 
+    # FGDB doesn't have fulltext search index
+    #FULLTEXT_INDEXES = [
+    #    ("Addresses", "address"),
+    #    ("Assessments", "SITE_ADDR")
+    #]
+
     SPATIAL_INDEXES = ["Parcels", "Buildings", "Addresses", "Assessments"]
 
     def __init__(self, input_folder, output_gdb_path, temp_folder=None, setup_logging=False, extract_zips=True):
@@ -224,7 +231,8 @@ class GDBMerge(object):
             self.move_largest_to_output()
         self.get_source_tables()
 
-        self.create_indexes(self.KEY_INDEXES)  # add indexes to just the key attributes now to support creating the relationship classes better. We'll index everything else at the end
+        # leaving the next line as a flag - it's unnecessary and just slows things down. Creating the relationship classes automatically creates the indexes.
+        #self.create_indexes(self.KEY_INDEXES)  # add indexes to just the key attributes now to support creating the relationship classes better. We'll index everything else at the end
         self._handle_manytomany_relationships()  # when we use our method, this should happen first. If we use Esri's builtin, it should be last.
 
         self.append_all_gdbs()
@@ -255,6 +263,22 @@ class GDBMerge(object):
                 continue
             logging.info(f"Unzipping {os.path.split(full_path)[1]}")
             shutil.unpack_archive(full_path, str(self.temp_folder))
+
+    def _size_sum(self, size_list):
+        size_mb = round(sum(size_list) / 1024 / 1024)
+        return size_mb / 1000  # 1000 here instead of 1024 to ensure only three decimal places. Could use number formatting, but used this.
+
+    def _size_report(self):
+        directory = self.output_gdb_path
+        file_list = os.listdir(directory)
+        sizes_in_bytes = {f: os.path.getsize(os.path.join(directory, f)) for f in file_list if os.path.isfile(os.path.join(directory, f))}
+        size_gb = self._size_sum(sizes_in_bytes.values())
+
+        index_sizes = [sizes_in_bytes[f] for f in sizes_in_bytes.keys() if "lid" in f.lower()]
+        indexes_gb = self._size_sum(index_sizes)
+
+        logging.info(f"Current Size: {size_gb} GB")
+        logging.info(f"Index Size: {indexes_gb} GB - {round((indexes_gb/size_gb)*100)}%")
 
     def move_largest_to_output(self):
 
@@ -287,12 +311,17 @@ class GDBMerge(object):
             indexes = self.KEY_INDEXES + self.ATTRIBUTE_INDEXES
 
         with arcpy.EnvManager(workspace=self.output_gdb_path):
+            if drop_first:
+                tables = {table: 1 for table, field in indexes}  # get the set of unique tables  - could also do this as list(set(list)))
+                for table in tables.keys():
+                    drop_indexes = [idx.name for idx in arcpy.ListIndexes(table) if not idx.name.startswith("FDO")]
+                    try:
+                        arcpy.management.RemoveIndex(table, drop_indexes)
+                    except arcpy.ExecuteError:
+                        pass  # it's OK to not remove it
+
             for table, field in indexes:  # it's a tuple, not a dict - 0 is table, 1 is field
                 logging.info(f"Creating index on {table}.{field}")
-
-                if drop_first:
-                    arcpy.management.RemoveIndex(table, f"idx_{field}")
-
                 arcpy.management.AddIndex(table, field, f"idx_{field}")
 
     def recreate_spatial_indexes(self):
