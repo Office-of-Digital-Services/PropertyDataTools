@@ -1,4 +1,13 @@
-Geocoding locator notes
+This code base compiles all LightBox county-level geodatabases into a single Esri file geodatabase with multiple
+enhancements designed to make the data ready for immediate use by subscribing departments.
+1. All county-level tables are merged, keeping the schema intact
+2. ArcGIS relationship classes have been created to support rapid utilization in ArcGIS Pro and Online
+3. Indexes are added to support both common queries and relationship traversal
+4. We will produce a locator file based on the full geodatabase to allow for forward and reverse geocoding
+
+
+
+# Rough set of steps (notes)
 
 ## Lightbox ETL
 1. Sort zips by size, track sizes by IDs.
@@ -19,7 +28,7 @@ Geocoding locator notes
 1. Either use TIGER, or CaRS
 
 ## Places of Interest Data
-1. Overture Places will likely be the most complete.
+1. Overture Places will likely be the most complete. Will need to download the parquet
 2. Download either the latest overture places release for California *or* places data from geofabrik extract?
 
 ## Other ancillary datasets
@@ -41,3 +50,14 @@ to an ID field, we can potentially use the city/county boundaries to fill other 
 ## Package and distribute geocoder
 * Do we need to index items in the geocoder *after* building? Or just before?
 * Distribute as compressed locator format? Or as standard .loc compressed as a zip
+
+
+# MVP for January
+* Documentation of Statewide SmartFabric database (CoP Site)
+* Reliable geocoder build and testing
+* Documentation of the geocoder (external)
+* Documentation of the data/geocoder (internal)
+
+## Nice to haves
+* Finish up the developer shim so Mark can try it out
+* Adding in parcels for reverse geocoding (if they behave well in geocoder, otherwise delay)

@@ -8,13 +8,15 @@ import arcpy
 
 import logging
 
+# Remove indexes before appending.
+# Run Check/Repair Geometry on counties before merge
+# Copy zoning data into GDB too!
 # Note that Nate indicated he'd be interested in a pipeline for the stripped down version that can be used publicly so they don't process it
+#  -- sounds like Nate will just use a view to strip it down
 # What do they need in terms of indexing?
-# FOLLOW UP WITH JEFF People often have the TAXAPN - Making a copied attribute and keeping it as string but removing the dashes is useful and helps for joining in external data.
 # Add some metadata - make sure to include a statement of appropriate use - also do this for city/county (or label the existing info that way.
-# probably want to run a compact at the end of things
-
-# Also, what constitutes public use of data as far as the contract is concerned?
+# probably want to run a compact at the end of things? Might not shrink anything though.
+# Will's feedback on a SmartParcels compatible items
 
 class GDBMerge(object):
     """
@@ -178,6 +180,7 @@ class GDBMerge(object):
         ("Addresses", "is_primary_address"),
         ("Addresses", "primary_address_lid"),
         ("Addresses", "parent_address_lid"),
+        # ("Addresses", "building_name_usps"), It's possible this field is empty in CA?
         ("Assessments", "FIPS_CODE"),
         ("Assessments", "PARCEL_LID"),
         ("Assessments", "PARCEL_APN"),
