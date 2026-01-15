@@ -38,6 +38,9 @@ class GDBMerge(object):
     zips = list()
     zips_by_size = list()
 
+    repair_geometry = True
+    REPAIR_GEOMETRY_TABLES = ["Parcels", "Buildings"]
+
     table_names = list()
 
     _create_indexes = True
@@ -234,14 +237,18 @@ class GDBMerge(object):
             self.move_largest_to_output()
         self.get_source_tables()
 
+        if self.repair_geometry:
+            self.handle_repair_geometry()
+
         # leaving the next line as a flag - it's unnecessary and just slows things down. Creating the relationship classes automatically creates the indexes.
         #self.create_indexes(self.KEY_INDEXES)  # add indexes to just the key attributes now to support creating the relationship classes better. We'll index everything else at the end
         self._handle_manytomany_relationships()  # when we use our method, this should happen first. If we use Esri's builtin, it should be last.
+        self._drop_indexes(indexes=self.KEY_INDEXES)  # we'll drop them now so that when we go to insert records it's not slow. We'd need to recreate the index later anyway.
 
         self.append_all_gdbs()
 
         if self._create_indexes:
-            self.create_indexes(drop_first=True)  # Our ideal is for this to happen after the appends and before the relationship classes. Since we're building relationship classes manually, this now happens last, except for non-attributed relationships
+            self.create_indexes(drop_first=False)  # Our ideal is for this to happen after the appends and before the relationship classes. Since we're building relationship classes manually, this now happens last, except for non-attributed relationships
             self.recreate_spatial_indexes() # we want this after the append so that the optimal grid size gets recalculated and the index is rebuilt
 
         self.create_relationship_classes()  # Make the simpler relationship classes that we can build at the end now.
@@ -315,23 +322,33 @@ class GDBMerge(object):
 
         with arcpy.EnvManager(workspace=self.output_gdb_path):
             if drop_first:
-                tables = {table: 1 for table, field in indexes}  # get the set of unique tables  - could also do this as list(set(list)))
-                for table in tables.keys():
-                    drop_indexes = [idx.name for idx in arcpy.ListIndexes(table) if not idx.name.startswith("FDO")]
-                    try:
-                        arcpy.management.RemoveIndex(table, drop_indexes)
-                    except arcpy.ExecuteError:
-                        pass  # it's OK to not remove it
+                self._drop_indexes(indexes)
 
             for table, field in indexes:  # it's a tuple, not a dict - 0 is table, 1 is field
                 logging.info(f"Creating index on {table}.{field}")
                 arcpy.management.AddIndex(table, field, f"idx_{field}")
+
+    def _drop_indexes(self, indexes: list[tuple[str, str]]):
+        tables = {table: 1 for table, field in indexes}  # get the set of unique tables  - could also do this as list(set(list)))
+        for table in tables.keys():
+            drop_indexes = [idx.name for idx in arcpy.ListIndexes(table) if not idx.name.startswith("FDO")]
+            try:
+                arcpy.management.RemoveIndex(table, drop_indexes)
+            except arcpy.ExecuteError:
+                pass  # it's OK to not remove it
 
     def recreate_spatial_indexes(self):
         with arcpy.EnvManager(workspace=self.output_gdb_path):
             for table in self.SPATIAL_INDEXES:
                 logging.info(f"Recreating spatial index on {table}")
                 arcpy.management.AddSpatialIndex(table, 0, 0, 0)  # the three zeros force it to recalculate the optimal grid size and ensure the index will be rebuilt
+
+    def handle_repair_geometry(self):
+        for gdb in self.gdbs_by_size:
+            with arcpy.EnvManager(workspace=gdb):
+                for table in self.REPAIR_GEOMETRY_TABLES:
+                    logging.info(f"Repairing geometry on {gdb}.{table}")
+                    arcpy.management.RepairGeometry(table)
 
     def append_all_gdbs(self):
         with arcpy.EnvManager(workspace=self.output_gdb_path):
@@ -354,6 +371,10 @@ class GDBMerge(object):
                 arcpy.management.CreateRelationshipClass(**rel)
 
     def generate_overlaps(self, skip=0):
+        """
+            This function stub is meant to determine which features along county lines overlap each other
+            We'll need to process the incoming data to determine potential overlaps
+        """
         with arcpy.EnvManager(workspace=self.output_gdb_path):
             pass
             # parcel_layers = [os.path.join(db, "parcels") for db in self.gdbs_by_size]
