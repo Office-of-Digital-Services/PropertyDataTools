@@ -1,22 +1,105 @@
-# locator_api.py
+# locator_api_dev_shim.py
 """
 Dev REST API wrapping a *local* ArcGIS locator (.loc) via `arcgis.geocoding.Locator`.
 
+Run this in an arcgis-based Python environment - it's likely safe to run this from a notebook in
+ArcGIS Pro (Nick to test)
+
 Endpoints:
-  - GET /geocode?address=FULL_ADDRESS[&max_locations=5]
-  - GET /reverse?lon=-122.4194&lat=37.7749[&distance=100]
+  - GET /geocode?address=FULL_ADDRESS&[max_locations=5]
+  - GET /reverse?lon=-122.4194&lat=37.7749
 
-Run (recommended):
-  uvicorn locator_api:app --reload --host 0.0.0.0 --port 8000
+Example:
+    curl http://localhost:8000/geocode?address=10860+Gold+Center+Drive+Rancho+Cordova
 
-  This code primarily developed by GenAI with Nick Santos - designed to be used *only*
+    Response:
+            {
+          "input": {
+            "address": "10860 Gold Center Drive Rancho Cordova"
+          },
+          "results": [
+            {
+              "Match_addr": "10860 Gold Center Dr, Rancho Cordova, 95670",
+              "Status": "M",
+              "Score": 100,
+              "LongLabel": "10860 Gold Center Dr, Rancho Cordova, 95670",
+              "ShortLabel": "10860 Gold Center Dr",
+              "Addr_type": "StreetAddress",
+              "Type": "",
+              "PlaceName": "",
+              "Place_addr": "10860 Gold Center Dr, Rancho Cordova, 95670",
+              "Phone": "",
+              "URL": "",
+              "Rank": 20,
+              "AddBldg": "",
+              "AddNum": "10860",
+              "AddNumFrom": "10700",
+              "AddNumTo": "10998",
+              "AddRange": "10700-10998",
+              "Side": "R",
+              "StPreDir": "",
+              "StPreType": "",
+              "StName": "Gold Center Dr",
+              "StType": "",
+              "StDir": "",
+              "BldgType": "",
+              "BldgName": "",
+              "LevelType": "",
+              "LevelName": "",
+              "UnitType": "",
+              "UnitName": "",
+              "SubAddr": "",
+              "StAddr": "10860 Gold Center Dr",
+              "Block": "",
+              "Sector": "",
+              "Nbrhd": "",
+              "District": "",
+              "City": "Rancho Cordova",
+              "MetroArea": "",
+              "Subregion": "Sacramento County",
+              "Region": "",
+              "RegionAbbr": "",
+              "Territory": "",
+              "Zone": "",
+              "Postal": "95670",
+              "PostalExt": "",
+              "Country": "",
+              "CntryName": "USA",
+              "LangCode": "ENG",
+              "Distance": 0,
+              "X": -121.2797034602203,
+              "Y": 38.591489370123995,
+              "DisplayX": -121.2797034602203,
+              "DisplayY": 38.591489370123995,
+              "Xmin": -121.27971346022031,
+              "Xmax": -121.2796934602203,
+              "Ymin": 38.59147937012399,
+              "Ymax": 38.591499370124,
+              "ExInfo": "",
+              "CountryCode": "",
+              "AttributeNames": null
+            }
+          ]
+        }
+
+Install:
+    Activate your Python environment, then `python -m pip install fastapi uvicorn`
+    You may also install these from the package manager in ArcGIS Pro, but must duplicate
+    the Python environment first.
+
+Run:
+  uvicorn unbox:locator_api_dev_shim --reload --host 0.0.0.0 --port 8000
+
+  Core of this code primarily developed by GenAI with Nick Santos - designed to be used *only*
   for QA of built locators in comparison to other geocoding APIs - not for use in production.
+  Edited and tested by Nick to add more documentation, fix errors, etc.
 """
 
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+import arcpy
 from fastapi import FastAPI, HTTPException, Query
 
 try:
@@ -37,7 +120,8 @@ except Exception as e:  # pragma: no cover
 #
 # Example (Linux):
 # LOCATOR_LOC_PATH = "/opt/data/locators/MyLocator.loc"
-LOCATOR_LOC_PATH = r"/ABSOLUTE/PATH/TO/YOUR/LOCATOR.loc"
+# LOCATOR_LOC_PATH = r"/ABSOLUTE/PATH/TO/YOUR/LOCATOR.loc"
+LOCATOR_LOC_PATH = r"C:\Users\nick.santos\Downloads\LBX_Delivery_20251015\PROFESSIONAL_FGDB\processing\test_alpine_locator.loc"
 
 DEFAULT_MAX_LOCATIONS = 5
 
@@ -65,7 +149,12 @@ LOCATOR = _build_locator()
 
 app = FastAPI(title="Local Locator Dev API", version="0.1.0")
 
+def _preprocess_results(results):
+    for i, _ in enumerate(results):
+        if "Shape" in results[i]:
+            del results[i]["Shape"]
 
+    return results
 @app.get("/geocode")
 def geocode(
     address: str = Query(..., description="Full address string to geocode"),
@@ -73,9 +162,10 @@ def geocode(
 ) -> Dict[str, Any]:
     """Calls Locator.geocode(address, ...)."""
     try:
-        results = LOCATOR.geocode(address, max_locations=max_locations)
+        results = LOCATOR.geocode(address, True, maxResults=max_locations)
+        results = _preprocess_results(results)
         return {
-            "input": {"address": address, "max_locations": max_locations},
+            "input": {"address": address},
             "results": _as_jsonable(results),
         }
     except Exception as e:
@@ -88,16 +178,15 @@ def reverse_geocode(
     lat: float = Query(..., ge=-90.0, le=90.0, description="WGS84 latitude"),
     distance: Optional[float] = Query(None, gt=0, description="Optional search distance"),
 ) -> Dict[str, Any]:
-    """Calls Locator.reverse_geocode(location={x,y,wkid=4326}, ...)."""
+    """Calls Locator.reverseGeocode(location={x,y,wkid=4326}, ...)."""
     try:
-        location = {"x": lon, "y": lat, "spatialReference": {"wkid": 4326}}
+        location = arcpy.PointGeometry(arcpy.Point(X=lon, Y=lat), arcpy.SpatialReference(4326))
         kwargs: Dict[str, Any] = {}
-        if distance is not None:
-            kwargs["distance"] = distance
 
-        result = LOCATOR.reverse_geocode(location=location, **kwargs)
+        result = LOCATOR.reverseGeocode(location=location, forStorage=True,**kwargs)
+        result = _preprocess_results([result])[0]
         return {
-            "input": {"lon": lon, "lat": lat, "distance": distance},
+            "input": {"lon": lon, "lat": lat},
             "result": _as_jsonable(result),
         }
     except Exception as e:
