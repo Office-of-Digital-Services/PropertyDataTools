@@ -16,8 +16,8 @@ formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(messag
 handler.setFormatter(formatter)
 root.addHandler(handler)
 
-DELIVERY_FOLDER = r"C:\Users\nick.santos\Downloads\LBX_Delivery_20251015\PROFESSIONAL_FGDB"
-GDB_NAME = "full_state_smartfabric.gdb"
+DELIVERY_FOLDER = r"C:\Users\nick.santos\Downloads\LBX_Delivery_20251015\PROFESSIONAL_FGDB\testing"
+GDB_NAME = "testing_smartfabric.gdb"
 
 def test_merge(delivery_folder=DELIVERY_FOLDER, gdb_name=GDB_NAME):
     start_time = datetime.now()
@@ -37,7 +37,8 @@ def test_merge(delivery_folder=DELIVERY_FOLDER, gdb_name=GDB_NAME):
     m = GDBMerge(input_folder=delivery_folder,
                   output_gdb_path=output_gdb,
                   temp_folder=temp_folder,
-                  setup_logging=True)
+                  setup_logging=True,
+                  extract_zips=True)
     m.run_merge()
 
     end_time = datetime.now()

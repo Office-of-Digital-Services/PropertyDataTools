@@ -117,9 +117,20 @@ class GDBMerge(object):
             "forward_label": "Assessments",
             "backward_label": "Parcels"
         },
-        """
-            Turns out ArcGIS won't let us make a relationship class with the same origin/destination. We'll need to likely
-            copy these records out to another table if we want to traverse them with a relationship class
+        {
+            "out_relationship_class": "PrimaryParcelAssessment",
+            "origin_table": "Parcels",
+            "destination_table": "Assessments",
+            "origin_primary_key": "primary_assessment_lid",
+            "origin_foreign_key": "assessment_lid",
+            "forward_label": "Primary Assessment",
+            "backward_label": "Parcel"
+        },
+    ]
+
+    """
+        #    Turns out ArcGIS won't let us make a relationship class with the same origin/destination. We'll need to likely
+        #    copy these records out to another table if we want to traverse them with a relationship class
              
         {
             "out_relationship_class": "AddressParent",
@@ -139,8 +150,8 @@ class GDBMerge(object):
             "forward_label": "secondary_addresses",
             "backward_label": "primary_address"
         },
-        """
     ]
+    """
 
     KEY_INDEXES = [
         ("Parcels", "Parcel_LID"),
@@ -232,6 +243,7 @@ class GDBMerge(object):
             shutil.rmtree(self.temp_folder)
 
     def run_merge(self):
+
         if self.extract_zips:
             self.process_zips()
             self.move_largest_to_output()
@@ -330,12 +342,15 @@ class GDBMerge(object):
 
     def _drop_indexes(self, indexes: list[tuple[str, str]]):
         tables = {table: 1 for table, field in indexes}  # get the set of unique tables  - could also do this as list(set(list)))
-        for table in tables.keys():
-            drop_indexes = [idx.name for idx in arcpy.ListIndexes(table) if not idx.name.startswith("FDO")]
-            try:
-                arcpy.management.RemoveIndex(table, drop_indexes)
-            except arcpy.ExecuteError:
-                pass  # it's OK to not remove it
+
+        with arcpy.EnvManager(workspace=self.output_gdb_path):
+            for table in tables.keys():
+                indexes = arcpy.ListIndexes(table)
+                drop_indexes = [idx.name for idx in indexes if not idx.name.startswith("FDO")]
+                try:
+                    arcpy.management.RemoveIndex(table, drop_indexes)
+                except arcpy.ExecuteError:
+                    pass  # it's OK to not remove it
 
     def recreate_spatial_indexes(self):
         with arcpy.EnvManager(workspace=self.output_gdb_path):

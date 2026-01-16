@@ -18,19 +18,20 @@ def prepare_locator_data(parcels, assessments, output_folder, parcel_gdb_name="t
     # Create temporary geodatabase
     print("Preparing statewide parcel data for locator by attaching address information")
     temp_folder=tempfile.mkdtemp(prefix="parcels_with_addresses_", dir=output_folder)
-    temp_gdb = arcpy.CreateFileGDB_management(temp_folder, parcel_gdb_name)[0]
+    temp_gdb = arcpy.management.CreateFileGDB(temp_folder, parcel_gdb_name)[0]
 
     # Copy parcels to temp gdb
     output_parcels = os.path.join(temp_gdb, "parcels_with_addresses")
-    arcpy.CopyFeatures_management(parcels, output_parcels)
+    arcpy.management.CopyFeatures(parcels, output_parcels)
 
     # Join address fields
-    arcpy.JoinField_management(
+    arcpy.management.JoinField(
         in_data=output_parcels,
         in_field="PRIMARY_ASSESSMENT_LID",
         join_table=assessments,
         join_field="ASSESSMENT_LID",
-        fields=["COUNTY", "SITE_ADDR", "SITE_HOUSE_NUMBER", "SITE_DIRECTION", "SITE_STREET_NAME", "SITE_MODE", "SITE_QUADRANT", "SITE_UNIT_PREFIX", "SITE_UNIT_NUMBER", "SITE_CITY", "SITE_STATE", "SITE_ZIP", "SITE_PLUS_4"]
+        fields=["COUNTY", "SITE_ADDR", "SITE_HOUSE_NUMBER", "SITE_DIRECTION", "SITE_STREET_NAME", "SITE_MODE", "SITE_QUADRANT", "SITE_UNIT_PREFIX", "SITE_UNIT_NUMBER", "SITE_CITY", "SITE_STATE", "SITE_ZIP", "SITE_PLUS_4"],
+        index_join_fields="NEW_INDEXES"
     )
 
     return output_parcels, temp_gdb
