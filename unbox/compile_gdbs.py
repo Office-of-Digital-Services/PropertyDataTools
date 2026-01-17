@@ -17,6 +17,8 @@ import logging
 # Add some metadata - make sure to include a statement of appropriate use - also do this for city/county (or label the existing info that way.
 # probably want to run a compact at the end of things? Might not shrink anything though.
 # Will's feedback on a SmartParcels compatible items
+# Can we add code to create the view programatically, including joining on the primary assessment and the primary building?
+# We could also make a view of the buildings with the parcel/assessment details?
 
 class GDBMerge(object):
     """
@@ -155,6 +157,7 @@ class GDBMerge(object):
 
     KEY_INDEXES = [
         ("Parcels", "Parcel_LID"),
+        ("Parcels", "PRIMARY_ASSESSMENT_LID"),
         ("Buildings", "building_lid"),
         ("Buildings", "primary_address_lid"),
         ("Buildings", "primary_parcel_lid"),
@@ -179,8 +182,9 @@ class GDBMerge(object):
     ATTRIBUTE_INDEXES = [
         # Table, Field
         ("Parcels", "FIPS_CODE"),
-        ("Parcels", "PRIMARY_ASSESSMENT_LID"),
         ("Parcels", "PRIMARY_BUILDING_LID"),
+        ('Parcels', "AGGR_ACREAGE"),
+        ('Parcels', "AGGR_GROUP"),
         ("Buildings", "FIPS_CODE"),
         ("Buildings", "county"),
         ("Buildings", "area_sqft"),
@@ -198,12 +202,18 @@ class GDBMerge(object):
         ("Assessments", "FIPS_CODE"),
         ("Assessments", "PARCEL_LID"),
         ("Assessments", "PARCEL_APN"),
+        ("Assessments", "ACREAGE"),
         ("Assessments", "TAXAPN"),
+        ("Assessments", "SITE_ZIP"),
+        ("Assessments", "MAIL_ZIP"),
+        ("Assessments", "SITE_CITY"),
+        ("Assessments", "CENSUS_BLOCK"),
+        ("Assessments", "CENSUS_BLOCK_GROUP"),
         ("BuildingParcelRelation", "building_overlap_ratio"),
         ("BuildingParcelRelation", "parcel_overlap_ratio"),
     ]
 
-    # FGDB doesn't have fulltext search index
+    # FGDB doesn't have fulltext search index, so these aren't helpful
     #FULLTEXT_INDEXES = [
     #    ("Addresses", "address"),
     #    ("Assessments", "SITE_ADDR")
