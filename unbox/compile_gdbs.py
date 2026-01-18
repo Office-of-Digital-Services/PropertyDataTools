@@ -19,6 +19,9 @@ import logging
 # Will's feedback on a SmartParcels compatible items
 # Can we add code to create the view programatically, including joining on the primary assessment and the primary building?
 # We could also make a view of the buildings with the parcel/assessment details?
+# check that it's repairing geometry on the first database that gets moved to the outputs. I don't see that in the listing. Likely because it has
+#           already been moved and isn't in "gdbs by size" anymore.
+# Add relationship classes and indexes back to the originals?
 
 class GDBMerge(object):
     """
@@ -120,7 +123,7 @@ class GDBMerge(object):
             "backward_label": "Parcels"
         },
         {
-            "out_relationship_class": "PrimaryParcelAssessment",
+            "out_relationship_class": "ParcelPrimaryAssessment",
             "origin_table": "Parcels",
             "destination_table": "Assessments",
             "origin_primary_key": "primary_assessment_lid",
@@ -128,6 +131,28 @@ class GDBMerge(object):
             "forward_label": "Primary Assessment",
             "backward_label": "Parcel"
         },
+        {
+            "out_relationship_class": "ParcelPrimaryBuilding",
+            "origin_table": "Parcels",
+            "destination_table": "Buildings",
+            "origin_primary_key": "primary_building_lid",
+            "origin_foreign_key": "building_lid",
+            "forward_label": "Primary Building",
+            "backward_label": "Parcel"
+        },
+    ]
+    VIEWS = [
+
+        {  # this might be funky because we need to get only a single geometry column back, and FGDBs don't support
+                # a wonderful set of SQL operators like EXCEPT(). So, I think we need to enumerate the fields and drop
+                # the Shape and OBJECTID fields, the replace the value for the PLACEHOLDERS below with a comma separated string
+        "Name": "ParcelsWithPrimaryAssessmentAndBuilding",
+        "Definition": "Select PARCELS_FIELDS_PLACEHOLDER, ASSESSMENTS_FIELDS_PLACEHOLDER, BUILDINGS_FIELDS_PLACEHOLDER"
+            + " FROM Parcels LEFT OUTER JOIN Assessments ON Parcels.primary_assessment_lid = Assessments.ASSESSMENT_LID"
+            + " LEFT OUTER JOIN Buildings ON Parcels.primary_building_lid = Buildings.building_lid",
+        "DropGeoms": ["Buildings", "Assessments"],  # which tables should have their geometries dropped?
+        "Prefixes": {"Buildings": "prim_bldg_", "Assessments": "prim_assess_"}
+        }
     ]
 
     """
@@ -258,6 +283,7 @@ class GDBMerge(object):
             self.process_zips()
             self.move_largest_to_output()
         self.get_source_tables()
+        self.create_views()  # this could basically go anywhere after the tables exist
 
         if self.repair_geometry:
             self.handle_repair_geometry()
@@ -355,6 +381,7 @@ class GDBMerge(object):
 
         with arcpy.EnvManager(workspace=self.output_gdb_path):
             for table in tables.keys():
+                logging.info(f"Dropping indexes on {table}")
                 indexes = arcpy.ListIndexes(table)
                 drop_indexes = [idx.name for idx in indexes if not idx.name.startswith("FDO")]
                 try:
@@ -369,7 +396,7 @@ class GDBMerge(object):
                 arcpy.management.AddSpatialIndex(table, 0, 0, 0)  # the three zeros force it to recalculate the optimal grid size and ensure the index will be rebuilt
 
     def handle_repair_geometry(self):
-        for gdb in self.gdbs_by_size:
+        for gdb in self.gdbs_by_size + [self.output_gdb_path]:
             with arcpy.EnvManager(workspace=gdb):
                 for table in self.REPAIR_GEOMETRY_TABLES:
                     logging.info(f"Repairing geometry on {gdb}.{table}")
@@ -381,6 +408,37 @@ class GDBMerge(object):
                 logging.info(f"Appending contents of all GDBs for theme {dataset}")
                 input_data = [os.path.join(self._zip_to_gdb_name(z), dataset) for z in self.zips_by_size] # get a list with all the inputs and we can run them at once!
                 arcpy.management.Append(input_data, os.path.join(self.output_gdb_path, dataset))
+
+    def _get_field_listing(self, table, drop_geoms=None, prefixes=None):
+        if prefixes is None:
+            prefixes = {"Buildings":"Buildings", "Assessments": "Assessments", "Parcels": "Parcels", "Addresses": "Addresses"}
+        if drop_geoms is None:
+            drop_geoms = list()
+
+        fields = arcpy.ListFields(table)
+        if table in drop_geoms:
+            fields = list(set(fields) - {"OBJECTID", "SHAPE"})
+        source_fields = [f"{table}.{field.name} as {prefixes[table]}{field.name}" for field in fields]
+        return ", ".join(source_fields)
+
+    def create_views(self):
+        with arcpy.EnvManager(workspace=self.output_gdb_path):
+            # Create any convenience views for us - we need to do funky things to not duplicate geometries, so we list out the fields in the datasets then remove OBJECTID and SHAPE
+
+            for view in self.VIEWS:
+                logging.info(f"Creating view {view['Name']}")
+
+                # this can be simplified, but this is nice and explicit at least
+                parcel_fields = self._get_field_listing("Parcels", drop_geoms=view["DropGeoms"])
+                building_fields = self._get_field_listing("Buildings", drop_geoms=view["DropGeoms"])
+                assessment_fields = self._get_field_listing("Assessments", drop_geoms=view["DropGeoms"])
+                view_definition = view["Definition"]  # remove the building geometries from the view if specified
+                view_definition = view_definition.replace("PARCELS_FIELDS_PLACEHOLDER", parcel_fields)
+                view_definition = view_definition.replace("BUILDINGS_FIELDS_PLACEHOLDER", building_fields)
+                view_definition = view_definition.replace("ASSESSMENTS_FIELDS_PLACEHOLDER", assessment_fields)
+
+                # now create the view in the DB
+                arcpy.management.CreateDatabaseView(self.output_gdb_path, view["Name"], view_definition)
 
     def create_relationship_classes(self):
         """

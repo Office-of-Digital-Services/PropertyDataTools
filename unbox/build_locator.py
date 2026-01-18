@@ -60,9 +60,12 @@ def copy_remote_to_local(cities, counties, temp_gdb):
 
 
 
-def make_locator(input_smartfabric_gdb, output_locator_path, cities=None, counties=None, tiger=None, parcels_with_addresses=None):
-    if cities is None or counties is None or tiger is None:  # this is temporary and will be removed later
+def make_locator(input_smartfabric_gdb, output_locator_path, cities=None, counties=None, tiger=None, parcels_with_addresses=None, temp_gdb=None):
+    if cities is None or counties is None or tiger is None:  # TODO: this is temporary and will be removed later
         raise ValueError("cities, counties, and TIGER must be specified")
+
+    if parcels_with_addresses and not temp_gdb:
+        raise ValueError("If parcels_with_addresses is specified, temp_gdb must also be specified")
 
     if not parcels_with_addresses:
         # Prepare parcel data with address information
@@ -72,8 +75,7 @@ def make_locator(input_smartfabric_gdb, output_locator_path, cities=None, counti
             output_folder=os.path.dirname(output_locator_path),
         )
 
-        cities, counties = copy_remote_to_local(cities, counties, temp_gdb)
-
+    cities, counties = copy_remote_to_local(cities, counties, temp_gdb)
 
     addresses_table = "Addresses"
     parcels_table = os.path.split(parcels_with_addresses)[1]  # in the field mapping, we just need the table name - we use the full path in the TABLE_MAPPING
