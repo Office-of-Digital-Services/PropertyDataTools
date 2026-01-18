@@ -147,11 +147,12 @@ class GDBMerge(object):
                 # a wonderful set of SQL operators like EXCEPT(). So, I think we need to enumerate the fields and drop
                 # the Shape and OBJECTID fields, the replace the value for the PLACEHOLDERS below with a comma separated string
         "Name": "ParcelsWithPrimaryAssessmentAndBuilding",
-        "Definition": "Select PARCELS_FIELDS_PLACEHOLDER, ASSESSMENTS_FIELDS_PLACEHOLDER, BUILDINGS_FIELDS_PLACEHOLDER"
+        "Definition": "Select PARCELS_FIELDS_PLACEHOLDER, ASSESSMENTS_FIELDS_PLACEHOLDER, BUILDINGS_FIELDS_PLACEHOLDER, BPR_FIELDS_PLACEHOLDER"
             + " FROM Parcels LEFT OUTER JOIN Assessments ON Parcels.primary_assessment_lid = Assessments.ASSESSMENT_LID"
-            + " LEFT OUTER JOIN Buildings ON Parcels.primary_building_lid = Buildings.building_lid",
-        "DropGeoms": ["Buildings", "Assessments"],  # which tables should have their geometries dropped?
-        "Prefixes": {"Buildings": "prim_bldg_", "Assessments": "prim_assess_"}
+            + " LEFT OUTER JOIN Buildings ON Parcels.primary_building_lid = Buildings.building_lid"
+            + " LEFT OUTER JOIN BuildingParcelRelation ON Parcels.parcel_lid = BuildingParcelRelation.PARCEL_LID AND Parcels.primary_building_lid = BuildingParcelRelation.building_lid",
+        "DropGeoms": ["Buildings", "Assessments", "BuildingParcelRelation"],  # which tables should have their geometries dropped?
+        "Prefixes": {"Parcels": "", "Buildings": "prim_bldg_", "Assessments": "prim_assess_", "BuildingParcelRelation": "prim_bldg_parcel_rel_"}
         }
     ]
 
@@ -409,16 +410,16 @@ class GDBMerge(object):
                 input_data = [os.path.join(self._zip_to_gdb_name(z), dataset) for z in self.zips_by_size] # get a list with all the inputs and we can run them at once!
                 arcpy.management.Append(input_data, os.path.join(self.output_gdb_path, dataset))
 
-    def _get_field_listing(self, table, drop_geoms=None, prefixes=None):
+    def _get_field_listing(self, table, drop_sys=None, prefixes=None):
         if prefixes is None:
-            prefixes = {"Buildings":"Buildings", "Assessments": "Assessments", "Parcels": "Parcels", "Addresses": "Addresses"}
-        if drop_geoms is None:
-            drop_geoms = list()
+            prefixes = {"Buildings":"Buildings_", "Assessments": "Assessments_", "Parcels": "Parcels_", "Addresses": "Addresses_", "BuildingParcelRelation": "BPR_"}
+        if drop_sys is None:
+            drop_sys = list()
 
-        fields = arcpy.ListFields(table)
-        if table in drop_geoms:
-            fields = list(set(fields) - {"OBJECTID", "SHAPE"})
-        source_fields = [f"{table}.{field.name} as {prefixes[table]}{field.name}" for field in fields]
+        fields = [field.name for field in arcpy.ListFields(table)]
+        if table in drop_sys:
+            fields = list(set(fields) - {"OBJECTID", "SHAPE", "RID"})
+        source_fields = [f"{table}.{field}" for field in fields]  #  as {prefixes[table] + field}"
         return ", ".join(source_fields)
 
     def create_views(self):
@@ -429,14 +430,16 @@ class GDBMerge(object):
                 logging.info(f"Creating view {view['Name']}")
 
                 # this can be simplified, but this is nice and explicit at least
-                parcel_fields = self._get_field_listing("Parcels", drop_geoms=view["DropGeoms"])
-                building_fields = self._get_field_listing("Buildings", drop_geoms=view["DropGeoms"])
-                assessment_fields = self._get_field_listing("Assessments", drop_geoms=view["DropGeoms"])
+                parcel_fields = self._get_field_listing("Parcels", drop_sys=view["DropGeoms"], prefixes=view["Prefixes"])
+                building_fields = self._get_field_listing("Buildings", drop_sys=view["DropGeoms"], prefixes=view["Prefixes"])
+                assessment_fields = self._get_field_listing("Assessments", drop_sys=view["DropGeoms"], prefixes=view["Prefixes"])
+                bpr_fields = self._get_field_listing("BuildingParcelRelation", drop_sys=view["DropGeoms"], prefixes=view["Prefixes"])
                 view_definition = view["Definition"]  # remove the building geometries from the view if specified
                 view_definition = view_definition.replace("PARCELS_FIELDS_PLACEHOLDER", parcel_fields)
                 view_definition = view_definition.replace("BUILDINGS_FIELDS_PLACEHOLDER", building_fields)
                 view_definition = view_definition.replace("ASSESSMENTS_FIELDS_PLACEHOLDER", assessment_fields)
-
+                view_definition = view_definition.replace("BPR_FIELDS_PLACEHOLDER", bpr_fields)
+                print(f"View definition: {view_definition}")
                 # now create the view in the DB
                 arcpy.management.CreateDatabaseView(self.output_gdb_path, view["Name"], view_definition)
 
