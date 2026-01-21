@@ -61,3 +61,123 @@ to an ID field, we can potentially use the city/county boundaries to fill other 
 ## Nice to haves
 * Finish up the developer shim so Mark can try it out
 * Adding in parcels for reverse geocoding (if they behave well in geocoder, otherwise delay)
+
+# Using the Dev Shim
+This repository comes with a shim that allows you to use ArcGIS locators produced by this project via a REST
+API. Running this shim will allow you to send queries to the locator programmatically from any language
+that supports HTTP requests.
+
+## First time setup
+1. Clone this repository
+2. Clone your default arcpy environment within ArcGIS Pro
+3. Activate the new environment within ArcGIS Pro
+4. Install the packages `fastapi` and `uvicorn` into the environment from the package manager tab
+4. Separately, copy the locator files to a path on your computer
+
+## Running the shim
+4. Open a project in ArcGIS Pro
+5. On the Analysis tab, use the Python dropdown to open the Python Window
+6. In the window that pops up, run the following
+```python shell
+# The following lines should be changed to reflect the path to your cloned repository
+# and to your locator file
+# The `r` prefix tells Python not to interpret backslashes as escape characters, so the
+# path is treated literally
+REPOSITORY_PATH = r"C:\Full\Path\To\Cloned\Repository"
+LOCATOR_FILE_PATH = r"C:\Full\Path\To\Locator\File.loc"
+
+import sys
+sys.path.insert(0, REPOSITORY_PATH)  # add it to the importable directories
+
+from unbox import locator_api_dev_shim
+import uvicorn
+
+from arcpy.geocoding import Locator
+locator_api_dev_shim.LOCATOR = Locator(LOCATOR_FILE_PATH)
+
+uvicorn.run("locator_api_dev_shim:app", port=8000, host="0.0.0.0")
+```
+Nothing will print out, but if it shows dots moving left to right, it's listening and you may try sending requests to
+the local server on port 8000. If you need to quit the server, click into the command section and press `Ctrl+C`.
+
+## Sending requests to the locator via the shim
+Using your preferred browser or API client,
+
+Endpoints:
+  - `GET /geocode?address=FULL_ADDRESS&[max_locations=5]`
+  - `GET /reverse?lon=-122.4194&lat=37.7749`
+
+Example:
+    `curl http://localhost:8000/geocode?address=10860+Gold+Center+Drive+Rancho+Cordova`
+
+Example Response:
+```json
+{
+  "input": {
+    "address": "10860 Gold Center Drive Rancho Cordova"
+  },
+  "results": [
+    {
+      "Match_addr": "10860 Gold Center Dr, Rancho Cordova, 95670",
+      "Status": "M",
+      "Score": 100,
+      "LongLabel": "10860 Gold Center Dr, Rancho Cordova, 95670",
+      "ShortLabel": "10860 Gold Center Dr",
+      "Addr_type": "StreetAddress",
+      "Type": "",
+      "PlaceName": "",
+      "Place_addr": "10860 Gold Center Dr, Rancho Cordova, 95670",
+      "Phone": "",
+      "URL": "",
+      "Rank": 20,
+      "AddBldg": "",
+      "AddNum": "10860",
+      "AddNumFrom": "10700",
+      "AddNumTo": "10998",
+      "AddRange": "10700-10998",
+      "Side": "R",
+      "StPreDir": "",
+      "StPreType": "",
+      "StName": "Gold Center Dr",
+      "StType": "",
+      "StDir": "",
+      "BldgType": "",
+      "BldgName": "",
+      "LevelType": "",
+      "LevelName": "",
+      "UnitType": "",
+      "UnitName": "",
+      "SubAddr": "",
+      "StAddr": "10860 Gold Center Dr",
+      "Block": "",
+      "Sector": "",
+      "Nbrhd": "",
+      "District": "",
+      "City": "Rancho Cordova",
+      "MetroArea": "",
+      "Subregion": "Sacramento County",
+      "Region": "",
+      "RegionAbbr": "",
+      "Territory": "",
+      "Zone": "",
+      "Postal": "95670",
+      "PostalExt": "",
+      "Country": "",
+      "CntryName": "USA",
+      "LangCode": "ENG",
+      "Distance": 0,
+      "X": -121.2797034602203,
+      "Y": 38.591489370123995,
+      "DisplayX": -121.2797034602203,
+      "DisplayY": 38.591489370123995,
+      "Xmin": -121.27971346022031,
+      "Xmax": -121.2796934602203,
+      "Ymin": 38.59147937012399,
+      "Ymax": 38.591499370124,
+      "ExInfo": "",
+      "CountryCode": "",
+      "AttributeNames": null
+    }
+  ]
+}
+```

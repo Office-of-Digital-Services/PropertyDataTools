@@ -184,6 +184,7 @@ class GDBMerge(object):
     KEY_INDEXES = [
         ("Parcels", "Parcel_LID"),
         ("Parcels", "PRIMARY_ASSESSMENT_LID"),
+        ("Parcels", "PRIMARY_BUILDING_LID"),
         ("Buildings", "building_lid"),
         ("Buildings", "primary_address_lid"),
         ("Buildings", "primary_parcel_lid"),
@@ -208,7 +209,6 @@ class GDBMerge(object):
     ATTRIBUTE_INDEXES = [
         # Table, Field
         ("Parcels", "FIPS_CODE"),
-        ("Parcels", "PRIMARY_BUILDING_LID"),
         ('Parcels', "AGGR_ACREAGE"),
         ('Parcels', "AGGR_GROUP"),
         ("Buildings", "FIPS_CODE"),

@@ -96,6 +96,7 @@ Run:
 """
 
 from __future__ import annotations
+import os
 
 from typing import Any, Dict, Optional
 
@@ -116,12 +117,12 @@ except Exception as e:  # pragma: no cover
 # -----------------------------------------------------------------------------
 # Set this to the absolute path (or a stable path relative to where you run the service).
 # Example (Windows):
-# LOCATOR_LOC_PATH = r"C:\data\locators\MyLocator.loc"
+# LOCATOR_PATH = r"C:\data\locators\MyLocator.loc"
 #
 # Example (Linux):
-# LOCATOR_LOC_PATH = "/opt/data/locators/MyLocator.loc"
-# LOCATOR_LOC_PATH = r"/ABSOLUTE/PATH/TO/YOUR/LOCATOR.loc"
-LOCATOR_LOC_PATH = r"C:\Users\nick.santos\Downloads\LBX_Delivery_20251015\PROFESSIONAL_FGDB\processing\test_alpine_locator.loc"
+# LOCATOR_PATH = "/opt/data/locators/MyLocator.loc"
+# LOCATOR_PATH = r"/ABSOLUTE/PATH/TO/YOUR/LOCATOR.loc"
+LOCATOR_PATH = r"C:\Users\nick.santos\Downloads\LBX_Delivery_20251015\PROFESSIONAL_FGDB\processing\test_alpine_locator.loc"
 
 DEFAULT_MAX_LOCATIONS = 5
 
@@ -140,14 +141,10 @@ def _as_jsonable(obj: Any) -> Any:
 
 
 def _build_locator() -> Locator:
-    if not LOCATOR_LOC_PATH or LOCATOR_LOC_PATH.strip() in {"/ABSOLUTE/PATH/TO/YOUR/LOCATOR.loc"}:
-        raise RuntimeError("LOCATOR_LOC_PATH is not configured. Set it to your local .loc path.")
-    return Locator(LOCATOR_LOC_PATH)
+    if not LOCATOR_PATH or LOCATOR_PATH.strip() in {"/ABSOLUTE/PATH/TO/YOUR/LOCATOR.loc"} or not os.path.exists(LOCATOR_PATH):
+        raise RuntimeError("LOCATOR_PATH is not configured or does not exist. Set it to your local .loc path.")
+    return Locator(LOCATOR_PATH)
 
-
-LOCATOR = _build_locator()
-
-app = FastAPI(title="Local Locator Dev API", version="0.1.0")
 
 def _preprocess_results(results):
     for i, _ in enumerate(results):
@@ -172,6 +169,34 @@ def geocode(
         raise HTTPException(status_code=500, detail=f"Geocode failed: {e!s}")
 
 
+""" This was a first attempt - I think it'd need to do better tracking returning all inputs
+for each output too.
+"""
+
+"""
+    @app.post("/batch")
+    def batch_geocode(
+        addresses: List[str],
+        max_locations: int = Query(DEFAULT_MAX_LOCATIONS, ge=1, le=50),
+    ) -> List[Dict[str, Any]]:
+        
+        try:
+            # batch method typically returns a list of result lists
+            batch_results = LOCATOR.batch(addresses)
+
+            response = []
+            for address, results in zip(addresses, batch_results):
+                processed_results = _preprocess_results(results)
+                response.append({
+                    "input": {"address": address},
+                    "results": _as_jsonable(processed_results),
+                })
+            return response
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Batch geocode failed: {e!s}")
+"""
+
+
 @app.get("/reverse")
 def reverse_geocode(
     lon: float = Query(..., ge=-180.0, le=180.0, description="WGS84 longitude"),
@@ -193,7 +218,11 @@ def reverse_geocode(
         raise HTTPException(status_code=500, detail=f"Reverse geocode failed: {e!s}")
 
 
+app = FastAPI(title="Local Locator Dev API", version="0.1.0")
+
 if __name__ == "__main__":
     import uvicorn
+
+    LOCATOR = _build_locator()
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
