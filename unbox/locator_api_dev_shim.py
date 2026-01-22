@@ -126,6 +126,7 @@ LOCATOR_PATH = r"C:\Users\nick.santos\Downloads\LBX_Delivery_20251015\PROFESSION
 
 DEFAULT_MAX_LOCATIONS = 5
 
+app = FastAPI(title="Local Locator Dev API", version="0.1.0")
 
 def _as_jsonable(obj: Any) -> Any:
     """Best-effort conversion to JSON-serializable data."""
@@ -217,8 +218,6 @@ def reverse_geocode(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Reverse geocode failed: {e!s}")
 
-
-app = FastAPI(title="Local Locator Dev API", version="0.1.0")
 
 if __name__ == "__main__":
     import uvicorn
