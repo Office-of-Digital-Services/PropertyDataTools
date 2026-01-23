@@ -89,13 +89,13 @@ LOCATOR_FILE_PATH = r"C:\Full\Path\To\Locator\File.loc"
 import sys
 sys.path.insert(0, REPOSITORY_PATH)  # add it to the importable directories
 
-from unbox import locator_api_dev_shim
+import unbox
 import uvicorn
 
 from arcpy.geocoding import Locator
-locator_api_dev_shim.LOCATOR = Locator(LOCATOR_FILE_PATH)
+unbox.locator_api_dev_shim.LOCATOR = Locator(LOCATOR_FILE_PATH)
 
-uvicorn.run("locator_api_dev_shim:app", port=8000, host="0.0.0.0")
+uvicorn.run("unbox.locator_api_dev_shim:app", port=8000, host="0.0.0.0")
 ```
 Nothing will print out, but if it shows dots moving left to right, it's listening and you may try sending requests to
 the local server on port 8000. If you need to quit the server, click into the command section and press `Ctrl+C`.
