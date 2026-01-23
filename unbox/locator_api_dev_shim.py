@@ -126,6 +126,7 @@ LOCATOR_PATH = r"C:\Users\nick.santos\Downloads\LBX_Delivery_20251015\PROFESSION
 
 DEFAULT_MAX_LOCATIONS = 5
 
+LOCATOR = None
 app = FastAPI(title="Local Locator Dev API", version="0.1.0")
 
 def _as_jsonable(obj: Any) -> Any:
@@ -141,10 +142,14 @@ def _as_jsonable(obj: Any) -> Any:
     return str(obj)
 
 
-def _build_locator() -> Locator:
-    if not LOCATOR_PATH or LOCATOR_PATH.strip() in {"/ABSOLUTE/PATH/TO/YOUR/LOCATOR.loc"} or not os.path.exists(LOCATOR_PATH):
-        raise RuntimeError("LOCATOR_PATH is not configured or does not exist. Set it to your local .loc path.")
-    return Locator(LOCATOR_PATH)
+def set_locator(locator_path=LOCATOR_PATH, set_global=True) -> Locator:
+    if not locator_path or locator_path.strip() in {"/ABSOLUTE/PATH/TO/YOUR/LOCATOR.loc"} or not os.path.exists(locator_path):
+        raise RuntimeError("locator_path is not configured or does not exist. Set it to your local .loc path.")
+    loc = Locator(locator_path)
+    if set_global:
+        global LOCATOR
+        LOCATOR = loc
+    return loc
 
 
 def _preprocess_results(results):
@@ -222,6 +227,6 @@ def reverse_geocode(
 if __name__ == "__main__":
     import uvicorn
 
-    LOCATOR = _build_locator()
+    LOCATOR = set_locator()
 
     uvicorn.run(app, host="0.0.0.0", port=8000)

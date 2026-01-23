@@ -93,7 +93,7 @@ import unbox
 import uvicorn
 
 from arcpy.geocoding import Locator
-unbox.locator_api_dev_shim.LOCATOR = Locator(LOCATOR_FILE_PATH)
+unbox.locator_api_dev_shim.set_locator(LOCATOR_FILE_PATH)
 
 uvicorn.run("unbox.locator_api_dev_shim:app", port=8000, host="0.0.0.0")
 ```
