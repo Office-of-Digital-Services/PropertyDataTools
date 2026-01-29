@@ -49,7 +49,7 @@ def prepare_address_data(addresses, temp_gdb):
 
     return output_addresses
 
-def copy_remote_to_local(cities, counties, temp_gdb):
+def copy_remote_to_local(cities=None, counties=None, temp_gdb=None):
     if not (cities.startswith("http") or counties.startswith("http")):
         return
 
@@ -57,13 +57,13 @@ def copy_remote_to_local(cities, counties, temp_gdb):
 
     portal = arcgis.GIS("https://arcgis.com")
 
-    if cities.startswith("http"):
+    if cities and cities.startswith("http"):
         cities_layer = arcgis.features.FeatureLayer(cities)
         features = cities_layer.query()
         features.save(temp_gdb, "cities")
         cities = os.path.join(temp_gdb, "cities")
 
-    if counties.startswith("http"):
+    if counties and counties.startswith("http"):
         counties_layer = arcgis.features.FeatureLayer(counties)
         features = counties_layer.query()
         features.save(temp_gdb, "counties")
@@ -73,14 +73,14 @@ def copy_remote_to_local(cities, counties, temp_gdb):
 
 
 
-def make_locator(input_smartfabric_gdb, output_locator_path, cities=None, counties=None, tiger=None, parcels_with_addresses=None, temp_gdb=None):
+def make_locator(input_smartfabric_gdb, output_locator_path, include_address_points=True, include_parcels=True, cities=None, counties=None, tiger=None, parcels_with_addresses=None, temp_gdb=None):
     if cities is None or counties is None or tiger is None:  # TODO: this is temporary and will be removed later
         raise ValueError("cities, counties, and TIGER must be specified")
 
     if parcels_with_addresses and not temp_gdb:
         raise ValueError("If parcels_with_addresses is specified, temp_gdb must also be specified")
 
-    if not parcels_with_addresses:
+    if not parcels_with_addresses and include_parcels:  # TODO: temp_gdb needs to be created and passed into these. We probably need a class now. The address point prep will fail if we don't provide a GDB and don't use parcels
         # Prepare parcel data with address information
         parcels_with_addresses, temp_gdb = prepare_parcel_data(
             parcels=os.path.join(input_smartfabric_gdb, "Parcels"),
@@ -88,26 +88,42 @@ def make_locator(input_smartfabric_gdb, output_locator_path, cities=None, counti
             output_folder=os.path.dirname(output_locator_path),
         )
 
-    cities, counties = copy_remote_to_local(cities, counties, temp_gdb)
+    table_mapping = []
+    if parcels_with_addresses:
+        parcels_table = os.path.split(parcels_with_addresses)[1]  # in the field mapping, we just need the table name - we use the full path in the TABLE_MAPPING
+        table_mapping.append((parcels_with_addresses, "Parcel"))
+    else:
+        parcels_table = None
 
-    initial_addresses_table = os.path.join(input_smartfabric_gdb, "Addresses")
-    parcels_table = os.path.split(parcels_with_addresses)[1]  # in the field mapping, we just need the table name - we use the full path in the TABLE_MAPPING
+    if cities or counties:
+        cities, counties = copy_remote_to_local(cities, counties, temp_gdb)
+        if cities:
+            table_mapping.append((cities, "City"))
+            cities_table = os.path.split(cities)[1]
+        else:
+            cities_table = None
+        if counties:
+            table_mapping.append((counties, "Subregion"))
+            counties_table = os.path.split(counties)[1]
+        else:
+            counties_table = None
 
-    addresses = prepare_address_data(initial_addresses_table, temp_gdb)
+    if include_address_points:
+        initial_addresses_table = os.path.join(input_smartfabric_gdb, "Addresses")
+        addresses = prepare_address_data(initial_addresses_table, temp_gdb)
+        table_mapping.insert(0, (addresses, "PointAddress"))
+        addresses_table = os.path.split(addresses)[1]
+    else:
+        addresses_table = None
 
-    TABLE_MAPPING = [
-        (addresses, "PointAddress"),  # this will be properly referenced below because we'll make its source database the workspace
-        (parcels_with_addresses, "Parcel"),
-        (cities, "City"),
-        (tiger, "StreetAddress"),
-        (counties, "Subregion")
-    ]
-    table_mapping = ";".join([" ".join(item) for item in TABLE_MAPPING])  # this is easier than constructing a valuetable input to the geoprocessing tool
+    if tiger:
+        table_mapping.append((tiger, "StreetAddress"))
+        tiger_table = os.path.split(tiger)[1]
+    else:
+        tiger_table = None
 
-    cities_table = os.path.split(cities)[1]
-    counties_table = os.path.split(counties)[1]
-    tiger_table = os.path.split(tiger)[1]
-    addresses_table = os.path.split(addresses)[1]
+    table_mapping = ";".join([" ".join(item) for item in table_mapping])  # this is easier than constructing a valuetable input to the geoprocessing tool
+
 
     # See https://pro.arcgis.com/en/pro-app/latest/help/data/geocoding/locator-role-fields.htm for mapping here
     VALUES_MAPPING = _get_locator_fields(addresses_table, cities_table, counties_table, parcels_table, tiger_table)
