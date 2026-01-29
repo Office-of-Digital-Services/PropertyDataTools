@@ -416,7 +416,7 @@ class GDBMerge(object):
         if drop_sys is None:
             drop_sys = list()
 
-        fields = [field.name for field in arcpy.ListFields(table)]
+        fields = [field.name for field in arcpy.ListFields(table)].sort()
         if table in drop_sys:
             fields = list(set(fields) - {"OBJECTID", "SHAPE", "RID"})
         source_fields = [f"{table}.{field}" for field in fields]  #  as {prefixes[table] + field}"
