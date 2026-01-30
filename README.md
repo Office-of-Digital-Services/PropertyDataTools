@@ -5,7 +5,26 @@ enhancements designed to make the data ready for immediate use by subscribing de
 3. Indexes are added to support both common queries and relationship traversal
 4. We will produce a locator file based on the full geodatabase to allow for forward and reverse geocoding
 
+# Building the locator
+The file build_locator_cli.py provides an interface to control the locator build. `main.py` will call the relevant
+parts automatically after merging the geodatabases, while the CLI allows you to control and customize locator builds
+either using a statewide database, specific county geodatabase directly from LightBox, or something else.
 
+## Example CLI commands
+The following example merges a statewide locator with TIGER, cities, and counties retrieved from ArcGIS Online automatically.
+You could provide a different geodatabase as the input to build a single county. 
+```shell
+python .\build_locator_cli.py --include_address_points --include_parcels --input_gdb C:\Full\Path\To\LightBox\Download\PROFESSIONAL_FGDB\full_state_smartfabric_20260120.gdb --output_locator C:\Full\Path\To\LightBox\Download\PROFESSIONAL_FGDB\processing_20260129\statewide_locator_20260129_zipfix.loc  --tiger C:\Full\Path\To\LightBox\Download\PROFESSIONAL_FGDB\_full_state_smartfabric.gdb\tiger_address_range_2025 --cities https://services3.arcgis.com/uknczv4rpevve42E/arcgis/rest/services/California_Cities_and_Identifiers_Blue_Version_view/FeatureServer/2 --counties https://services3.arcgis.com/uknczv4rpevve42E/arcgis/rest/services/California_County_Boundaries_and_Identifiers_Blue_Version_view/FeatureServer/1                                                                                               
+```
+
+But you may also build a locator with only specific data themes. Leave out the `--tiger`, `--cities`, and `--counties` flags to build a locator with only address points and parcels.
+You can control whether address points or parcels are included in the locator by using the `--include_address_points` and `--include_parcels` flags, which happen
+by default if you don't provide them, but you can explicitly switch them off with `--no_include_address_points` and `--no_include_parcels`
+```shell
+python .\build_locator_cli.py --include_address_points --no_include_parcels --input_gdb C:\Full\Path\To\LightBox\Download\PROFESSIONAL_FGDB\SF_Professional_06037_20260115\SF_Professional_06037.gdb --output_locator C:\Full\Path\To\LightBox\Download\la_county_addresses_only_test.loc 
+```
+
+Typing `python .\build_locator_cli.py --help` will show you all the options available.
 
 # Rough set of steps (notes)
 

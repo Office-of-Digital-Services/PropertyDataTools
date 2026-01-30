@@ -1,10 +1,67 @@
+from __future__ import annotations
+
 import os
 import tempfile
+
+from dataclasses import dataclass
+from typing import Dict, Iterable, List, Optional, Tuple
 
 import arcpy
 import arcgis
 
-def prepare_parcel_data(parcels, assessments, output_folder, parcel_gdb_name="temp_parcels.gdb"):
+@dataclass
+class BuildConfig:
+    input_gdb: str
+    output_locator_path: str
+
+    # Common configuration flags with paths/URLs attached
+    cities: Optional[str] = None
+    counties: Optional[str] = None
+    tiger: Optional[str] = None
+    portal_auth: Optional[str] = "pro"
+    portal: Optional[str] = "https://www.arcgis.com"
+
+    # Feature flags / toggles
+    include_address_points: bool = True
+    include_parcels: bool = True
+
+    # Optional advanced inputs
+    parcels_with_addresses: Optional[str] = None
+    temp_gdb: Optional[str] = None
+
+    output_folder: str = None
+    parcel_gdb_name: str = "temp_parcels.gdb"
+
+    # Free-form config values: --config KEY=VALUE (repeatable)
+    extra: Dict[str, str] | None = None
+
+    def run_build(self):
+        if not self.output_folder:
+            self.output_folder = os.path.dirname(self.output_locator_path)
+
+        if not self.temp_gdb:
+            # Create the temporary geodatabase before running the rest of the code
+            self.temp_gdb = make_temp_gdb(self.output_folder, self.parcel_gdb_name)
+
+        make_locator(input_smartfabric_gdb=self.input_gdb,
+                     output_locator_path=self.output_locator_path,
+                     include_address_points=self.include_address_points,
+                     include_parcels=self.include_parcels,
+                     cities=self.cities,
+                     counties=self.counties,
+                     tiger=self.tiger,
+                     parcels_with_addresses=self.parcels_with_addresses,
+                     temp_gdb=self.temp_gdb
+        )
+
+
+def make_temp_gdb(output_folder: str, gdb_name: str = "temp_parcels.gdb"):
+    temp_folder = tempfile.mkdtemp(prefix="parcels_with_addresses_", dir=output_folder)
+    temp_gdb = arcpy.management.CreateFileGDB(temp_folder, gdb_name)[0]
+    print(f"Temp GDB: {temp_gdb}")
+    return temp_gdb
+
+def prepare_parcel_data(parcels, assessments, temp_gdb):
     """
     Copies parcels to a temporary geodatabase and joins address information for use in building a locator.
 
@@ -15,11 +72,8 @@ def prepare_parcel_data(parcels, assessments, output_folder, parcel_gdb_name="te
     Returns:
         Path to the output parcels feature class with joined address fields
     """
-    # Create temporary geodatabase
-    print("Preparing statewide parcel data for locator by attaching address information")
-    temp_folder=tempfile.mkdtemp(prefix="parcels_with_addresses_", dir=output_folder)
-    temp_gdb = arcpy.management.CreateFileGDB(temp_folder, parcel_gdb_name)[0]
 
+    print("Preparing statewide parcel data for locator by attaching address information")
     # Copy parcels to temp gdb
     output_parcels = os.path.join(temp_gdb, "parcels_with_addresses")
     arcpy.management.CopyFeatures(parcels, output_parcels)
@@ -34,10 +88,11 @@ def prepare_parcel_data(parcels, assessments, output_folder, parcel_gdb_name="te
         index_join_fields="NEW_INDEXES"
     )
 
-    return output_parcels, temp_gdb
+    return output_parcels
 
 def prepare_address_data(addresses, temp_gdb):
     # copy it out to temp, make zip5 and zip4 fields
+    print("Preparing statewide address data for locator by splitting ZIP codes into separate fields for 5 digit and extension")
     output_addresses = os.path.join(temp_gdb, "address_points")
     arcpy.management.CopyFeatures(addresses, output_addresses)
 
@@ -49,13 +104,18 @@ def prepare_address_data(addresses, temp_gdb):
 
     return output_addresses
 
-def copy_remote_to_local(cities=None, counties=None, temp_gdb=None):
+def copy_remote_to_local(cities=None, counties=None, temp_gdb=None, portal_auth="pro", portal=None):
     if not (cities.startswith("http") or counties.startswith("http")):
         return
 
     print("Downloading remote data for locator")
 
-    portal = arcgis.GIS("https://arcgis.com")
+    if portal_auth != "pro" and portal is None:
+        raise ValueError(f"Portal authentication set to something other than 'pro' but no portal URL provided.")
+    if portal_auth == "pro":
+        portal = arcgis.GIS(portal_auth)
+    else:
+        portal = arcgis.GIS(portal)
 
     if cities and cities.startswith("http"):
         cities_layer = arcgis.features.FeatureLayer(cities)
@@ -73,19 +133,22 @@ def copy_remote_to_local(cities=None, counties=None, temp_gdb=None):
 
 
 
-def make_locator(input_smartfabric_gdb, output_locator_path, include_address_points=True, include_parcels=True, cities=None, counties=None, tiger=None, parcels_with_addresses=None, temp_gdb=None):
-    if cities is None or counties is None or tiger is None:  # TODO: this is temporary and will be removed later
-        raise ValueError("cities, counties, and TIGER must be specified")
+def make_locator(input_smartfabric_gdb, output_locator_path, include_address_points=True, processed_address_points=None, include_parcels=True, cities=None, counties=None, tiger=None, parcels_with_addresses=None, temp_gdb=None):
 
-    if parcels_with_addresses and not temp_gdb:
-        raise ValueError("If parcels_with_addresses is specified, temp_gdb must also be specified")
+    if not temp_gdb:
+        make_temp_gdb(os.path.dirname(output_locator_path), "temp_parcels.gdb")
 
-    if not parcels_with_addresses and include_parcels:  # TODO: temp_gdb needs to be created and passed into these. We probably need a class now. The address point prep will fail if we don't provide a GDB and don't use parcels
+    # do this first because we've had multiple failures in the download process and better to fail before doing
+    # the other setup work that takes time.
+    if cities or counties:
+        cities, counties = copy_remote_to_local(cities, counties, temp_gdb)
+
+    if not parcels_with_addresses and include_parcels:
         # Prepare parcel data with address information
-        parcels_with_addresses, temp_gdb = prepare_parcel_data(
+        parcels_with_addresses = prepare_parcel_data(
             parcels=os.path.join(input_smartfabric_gdb, "Parcels"),
             assessments=os.path.join(input_smartfabric_gdb, "Assessments"),
-            output_folder=os.path.dirname(output_locator_path),
+            temp_gdb=temp_gdb
         )
 
     table_mapping = []
@@ -95,22 +158,24 @@ def make_locator(input_smartfabric_gdb, output_locator_path, include_address_poi
     else:
         parcels_table = None
 
-    if cities or counties:
-        cities, counties = copy_remote_to_local(cities, counties, temp_gdb)
-        if cities:
-            table_mapping.append((cities, "City"))
-            cities_table = os.path.split(cities)[1]
-        else:
-            cities_table = None
-        if counties:
-            table_mapping.append((counties, "Subregion"))
-            counties_table = os.path.split(counties)[1]
-        else:
-            counties_table = None
+    if cities:
+        table_mapping.append((cities, "City"))
+        cities_table = os.path.split(cities)[1]
+    else:
+        cities_table = None
+
+    if counties:
+        table_mapping.append((counties, "Subregion"))
+        counties_table = os.path.split(counties)[1]
+    else:
+        counties_table = None
 
     if include_address_points:
-        initial_addresses_table = os.path.join(input_smartfabric_gdb, "Addresses")
-        addresses = prepare_address_data(initial_addresses_table, temp_gdb)
+        if not processed_address_points:
+            initial_addresses_table = os.path.join(input_smartfabric_gdb, "Addresses")
+            addresses = prepare_address_data(initial_addresses_table, temp_gdb)
+        else:
+            addresses = processed_address_points
         table_mapping.insert(0, (addresses, "PointAddress"))
         addresses_table = os.path.split(addresses)[1]
     else:
@@ -123,7 +188,7 @@ def make_locator(input_smartfabric_gdb, output_locator_path, include_address_poi
         tiger_table = None
 
     table_mapping = ";".join([" ".join(item) for item in table_mapping])  # this is easier than constructing a valuetable input to the geoprocessing tool
-
+    print(table_mapping)
 
     # See https://pro.arcgis.com/en/pro-app/latest/help/data/geocoding/locator-role-fields.htm for mapping here
     VALUES_MAPPING = _get_locator_fields(addresses_table, cities_table, counties_table, parcels_table, tiger_table)
@@ -163,8 +228,8 @@ def _get_locator_fields(addresses_table=None, cities_table=None, counties_table=
         f'PointAddress.SUBREGION_JOIN_ID {addresses_table}.fips_code',
         f'PointAddress.SUBREGION {addresses_table}.county',
         f'PointAddress.REGION {addresses_table}.state',
-        f'PointAddress.POSTAL {addresses_table}.ZIP5'
-        f'PointAddress.POSTAL_EXT {addresses_table}.ZIPEXT'
+        f'PointAddress.POSTAL {addresses_table}.ZIP5',
+        f'PointAddress.POSTAL_EXT {addresses_table}.ZIPEXT',
         ])
         # f'PointAddress.COUNTRY_CODE {addresses_table}.country_code', # Apparently "US" is an invalid country code
         # 'PointAddress.BUILDING_NAME {addresses_table}.building_name_usps'  # 100% null values as of October 2025 release
@@ -181,7 +246,6 @@ def _get_locator_fields(addresses_table=None, cities_table=None, counties_table=
                 f'Parcel.SUBREGION_JOIN_ID {parcels_table}.COUNTY_FIPS',  # Matches County Join ID in UI
                 f'Parcel.HOUSE_NUMBER {parcels_table}.SITE_HOUSE_NUMBER',
 
-                # TODO: This may ultimately need to be prefix direction with SITE_QUADRANT being suffix direction
                 f'Parcel.STREET_PREFIX_DIR {parcels_table}.SITE_DIRECTION',
                 f'Parcel.STREET_NAME {parcels_table}.SITE_STREET_NAME',  # Matches Street Name in UI - not Full Street Name
                 f'Parcel.FULL_STREET_NAME {parcels_table}.SITE_ADDR',
