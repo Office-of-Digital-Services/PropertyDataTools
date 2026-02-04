@@ -143,16 +143,22 @@ def make_locator(input_smartfabric_gdb, output_locator_path, include_address_poi
     if cities or counties:
         cities, counties = copy_remote_to_local(cities, counties, temp_gdb)
 
-    if not parcels_with_addresses and include_parcels:
-        # Prepare parcel data with address information
-        parcels_with_addresses = prepare_parcel_data(
-            parcels=os.path.join(input_smartfabric_gdb, "Parcels"),
-            assessments=os.path.join(input_smartfabric_gdb, "Assessments"),
-            temp_gdb=temp_gdb
-        )
+    # prepare and validate parcel inputs
+    if include_parcels:
+        if not parcels_with_addresses:
+            # Prepare parcel data with address information
+            parcels_with_addresses = prepare_parcel_data(
+                parcels=os.path.join(input_smartfabric_gdb, "Parcels"),
+                assessments=os.path.join(input_smartfabric_gdb, "Assessments"),
+                temp_gdb=temp_gdb
+            )
+        else:
+            if not arcpy.Exists(parcels_with_addresses):
+                raise ValueError(f"Parcels with addresses path provided ({parcels_with_addresses}) does not exist as a valid ArcGIS-readable dataset.")
 
+    # prepare the data for the table mapping input
     table_mapping = []
-    if parcels_with_addresses:
+    if include_parcels:
         parcels_table = os.path.split(parcels_with_addresses)[1]  # in the field mapping, we just need the table name - we use the full path in the TABLE_MAPPING
         table_mapping.append((parcels_with_addresses, "Parcel"))
     else:
@@ -187,12 +193,20 @@ def make_locator(input_smartfabric_gdb, output_locator_path, include_address_poi
     else:
         tiger_table = None
 
+    if len(table_mapping) == 0:
+        raise ValueError("No input tables provided for locator - likely misconfiguration of input flags")
+
     table_mapping = ";".join([" ".join(item) for item in table_mapping])  # this is easier than constructing a valuetable input to the geoprocessing tool
     print(table_mapping)
 
     # See https://pro.arcgis.com/en/pro-app/latest/help/data/geocoding/locator-role-fields.htm for mapping here
-    VALUES_MAPPING = _get_locator_fields(addresses_table, cities_table, counties_table, parcels_table, tiger_table)
+    values_mapping = _get_locator_fields(addresses_table=addresses_table,
+                                         cities_table=cities_table,
+                                         counties_table=counties_table,
+                                         parcels_table=parcels_table,
+                                         tiger_table=tiger_table)
 
+    print(values_mapping)
     # TODO: Need to specify the actual table names in the field map for the items not in the workspace -
     #  this just captures the creation of the test locator
 
@@ -201,7 +215,7 @@ def make_locator(input_smartfabric_gdb, output_locator_path, include_address_poi
         arcpy.geocoding.CreateLocator(
             country_code="USA",
             primary_reference_data=table_mapping,
-            field_mapping=VALUES_MAPPING,  # we can use this one directly as a list
+            field_mapping=values_mapping,  # we can use this one directly as a list
             out_locator=output_locator_path,
             language_code="ENG",
             alternatename_tables=None,
@@ -214,6 +228,7 @@ def make_locator(input_smartfabric_gdb, output_locator_path, include_address_poi
 
 def _get_locator_fields(addresses_table=None, cities_table=None, counties_table=None, parcels_table=None, tiger_table=None) -> list[str]:
     values_mapping = []
+    print("Running!")
 
     if addresses_table:
         values_mapping.extend([
@@ -234,61 +249,61 @@ def _get_locator_fields(addresses_table=None, cities_table=None, counties_table=
         # f'PointAddress.COUNTRY_CODE {addresses_table}.country_code', # Apparently "US" is an invalid country code
         # 'PointAddress.BUILDING_NAME {addresses_table}.building_name_usps'  # 100% null values as of October 2025 release
 
-        # Parcels layer
-        if parcels_table:
-            values_mapping.extend([
-                f'Parcel.PARCEL_NAME {parcels_table}.PARCEL_LID',
-                f'Parcel.PARCEL_JOIN_ID {parcels_table}.PARCEL_LID',
-                f'Parcel.SUBREGION_JOIN_ID {parcels_table}.FIPS_CODE',
+    # Parcels layer
+    if parcels_table:
+        values_mapping.extend([
+            f'Parcel.PARCEL_NAME {parcels_table}.SITE_ADDR',
+            f'Parcel.PARCEL_JOIN_ID {parcels_table}.PARCEL_LID',
+            f'Parcel.SUBREGION_JOIN_ID {parcels_table}.FIPS_CODE',
 
-                # TODO: Check that this has the full county name
-                f'Parcel.SUBREGION {parcels_table}.COUNTY',  # Matches County in UI
-                f'Parcel.SUBREGION_JOIN_ID {parcels_table}.COUNTY_FIPS',  # Matches County Join ID in UI
-                f'Parcel.HOUSE_NUMBER {parcels_table}.SITE_HOUSE_NUMBER',
+            # TODO: Check that this has the full county name
+            f'Parcel.SUBREGION {parcels_table}.COUNTY',  # Matches County in UI
+            f'Parcel.SUBREGION_JOIN_ID {parcels_table}.COUNTY_FIPS',  # Matches County Join ID in UI
+            f'Parcel.HOUSE_NUMBER {parcels_table}.SITE_HOUSE_NUMBER',
 
-                f'Parcel.STREET_PREFIX_DIR {parcels_table}.SITE_DIRECTION',
-                f'Parcel.STREET_NAME {parcels_table}.SITE_STREET_NAME',  # Matches Street Name in UI - not Full Street Name
-                f'Parcel.FULL_STREET_NAME {parcels_table}.SITE_ADDR',
-                f'Parcel.STREET_SUFFIX_TYPE {parcels_table}.SITE_MODE',
-                f'Parcel.STREET_SUFFIX_DIR {parcels_table}.SITE_QUADRANT',
-                f'Parcel.SUB_ADDRESS_UNIT_TYPE {parcels_table}.SITE_UNIT_PREFIX',  # Matches Unit Type in UI
-                f'Parcel.SUB_ADDRESS_UNIT {parcels_table}.SITE_UNIT_NUMBER',
-                f'Parcel.CITY {parcels_table}.SITE_CITY',
-                f'Parcel.REGION {parcels_table}.SITE_STATE',
-                f'Parcel.POSTAL {parcels_table}.SITE_ZIP',
-                f'Parcel.POSTAL_EXT {parcels_table}.SITE_PLUS_4',
-            ])
+            f'Parcel.STREET_PREFIX_DIR {parcels_table}.SITE_DIRECTION',
+            f'Parcel.STREET_NAME {parcels_table}.SITE_STREET_NAME',  # Matches Street Name in UI - not Full Street Name
+            f'Parcel.FULL_STREET_NAME {parcels_table}.SITE_ADDR',
+            f'Parcel.STREET_SUFFIX_TYPE {parcels_table}.SITE_MODE',
+            f'Parcel.STREET_SUFFIX_DIR {parcels_table}.SITE_QUADRANT',
+            f'Parcel.SUB_ADDRESS_UNIT_TYPE {parcels_table}.SITE_UNIT_PREFIX',  # Matches Unit Type in UI
+            f'Parcel.SUB_ADDRESS_UNIT {parcels_table}.SITE_UNIT_NUMBER',
+            f'Parcel.CITY {parcels_table}.SITE_CITY',
+            f'Parcel.REGION {parcels_table}.SITE_STATE',
+            f'Parcel.POSTAL {parcels_table}.SITE_ZIP',
+            f'Parcel.POSTAL_EXT {parcels_table}.SITE_PLUS_4',
+        ])
 
-        if cities_table:
-            values_mapping.extend([
-                # Cities layer - supports locations with simple partial addresses
-                f'City.CITY_JOIN_ID {cities_table}.CENSUS_GEOID',
-                f'City.CITY {cities_table}.CDTFA_CITY'
-            ])
+    if cities_table:
+        values_mapping.extend([
+            # Cities layer - supports locations with simple partial addresses
+            f'City.CITY_JOIN_ID {cities_table}.CENSUS_GEOID',
+            f'City.CITY {cities_table}.CDTFA_CITY'
+        ])
 
-        if tiger_table:
-            values_mapping.extend([
-                # CENSUS TIGER layer - for address interpolation and geocoding
-                f'StreetAddress.HOUSE_NUMBER_FROM_LEFT {tiger_table}.LFROMHN',
-                f'StreetAddress.HOUSE_NUMBER_TO_LEFT {tiger_table}.LTOHN',
-                f'StreetAddress.HOUSE_NUMBER_FROM_RIGHT {tiger_table}.RFROMHN',
-                f'StreetAddress.HOUSE_NUMBER_TO_RIGHT {tiger_table}.RTOHN',
-                f'StreetAddress.PARITY_LEFT {tiger_table}.PARITYL',
-                f'StreetAddress.PARITY_RIGHT {tiger_table}.PARITYR',
-                f'StreetAddress.STREET_NAME {tiger_table}.FULLNAME',
-                f'StreetAddress.POSTAL_LEFT {tiger_table}.ZIPL',
-                f'StreetAddress.POSTAL_EXT_LEFT {tiger_table}.PLUS4L',
-                f'StreetAddress.POSTAL_RIGHT {tiger_table}.ZIPR',
-                f'StreetAddress.POSTAL_EXT_RIGHT {tiger_table}.PLUS4R'
-            ])
+    if tiger_table:
+        values_mapping.extend([
+            # CENSUS TIGER layer - for address interpolation and geocoding
+            f'StreetAddress.HOUSE_NUMBER_FROM_LEFT {tiger_table}.LFROMHN',
+            f'StreetAddress.HOUSE_NUMBER_TO_LEFT {tiger_table}.LTOHN',
+            f'StreetAddress.HOUSE_NUMBER_FROM_RIGHT {tiger_table}.RFROMHN',
+            f'StreetAddress.HOUSE_NUMBER_TO_RIGHT {tiger_table}.RTOHN',
+            f'StreetAddress.PARITY_LEFT {tiger_table}.PARITYL',
+            f'StreetAddress.PARITY_RIGHT {tiger_table}.PARITYR',
+            f'StreetAddress.STREET_NAME {tiger_table}.FULLNAME',
+            f'StreetAddress.POSTAL_LEFT {tiger_table}.ZIPL',
+            f'StreetAddress.POSTAL_EXT_LEFT {tiger_table}.PLUS4L',
+            f'StreetAddress.POSTAL_RIGHT {tiger_table}.ZIPR',
+            f'StreetAddress.POSTAL_EXT_RIGHT {tiger_table}.PLUS4R'
+        ])
 
-        # Counties layer
-        if counties_table:
-            values_mapping.extend([
-                f'Subregion.SUBREGION_JOIN_ID {counties_table}.CENSUS_GEOID',
-                f'Subregion.SUBREGION {counties_table}.CDTFA_COUNTY'
-                # TODO: CHECK IF THIS HAS THE FULL COUNTY NAME - IT IS RECOMMENDED THAT IT INCLUDES "County"
-            ])
+    # Counties layer
+    if counties_table:
+        values_mapping.extend([
+            f'Subregion.SUBREGION_JOIN_ID {counties_table}.CENSUS_GEOID',
+            f'Subregion.SUBREGION {counties_table}.CDTFA_COUNTY'
+            # TODO: CHECK IF THIS HAS THE FULL COUNTY NAME - IT IS RECOMMENDED THAT IT INCLUDES "County"
+        ])
 
     return values_mapping
 
