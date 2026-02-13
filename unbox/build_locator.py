@@ -18,6 +18,7 @@ class BuildConfig:
     cities: Optional[str] = None
     counties: Optional[str] = None
     tiger: Optional[str] = None
+    zip_boundaries: Optional[str] = None
     portal_auth: Optional[str] = "pro"
     portal: Optional[str] = "https://www.arcgis.com"
 
@@ -43,15 +44,19 @@ class BuildConfig:
             # Create the temporary geodatabase before running the rest of the code
             self.temp_gdb = make_temp_gdb(self.output_folder, self.parcel_gdb_name)
 
-        make_locator(input_smartfabric_gdb=self.input_gdb,
-                     output_locator_path=self.output_locator_path,
-                     include_address_points=self.include_address_points,
-                     include_parcels=self.include_parcels,
-                     cities=self.cities,
-                     counties=self.counties,
-                     tiger=self.tiger,
-                     parcels_with_addresses=self.parcels_with_addresses,
-                     temp_gdb=self.temp_gdb
+        make_locator(
+            input_smartfabric_gdb=self.input_gdb,
+            output_locator_path=self.output_locator_path,
+            include_address_points=self.include_address_points,
+            include_parcels=self.include_parcels,
+            cities=self.cities,
+            counties=self.counties,
+            tiger=self.tiger,
+            zip_boundaries=self.zip_boundaries,
+            parcels_with_addresses=self.parcels_with_addresses,
+            temp_gdb=self.temp_gdb,
+            portal_auth=self.portal_auth,
+            portal=self.portal,
         )
 
 
@@ -104,9 +109,9 @@ def prepare_address_data(addresses, temp_gdb):
 
     return output_addresses
 
-def copy_remote_to_local(cities=None, counties=None, temp_gdb=None, portal_auth="pro", portal=None):
-    if not (cities.startswith("http") or counties.startswith("http")):
-        return
+def copy_remote_to_local(cities=None, counties=None, zips=None, temp_gdb=None, portal_auth="pro", portal=None):
+    if not ((cities and cities.startswith("http")) or (counties and counties.startswith("http")) or (zips and zips.startswith("http"))):
+        return cities, counties, zips
 
     print("Downloading remote data for locator")
 
@@ -129,19 +134,46 @@ def copy_remote_to_local(cities=None, counties=None, temp_gdb=None, portal_auth=
         features.save(temp_gdb, "counties")
         counties = os.path.join(temp_gdb, "counties")
 
-    return cities, counties
+    if zips and zips.startswith("http"):
+        zips_layer = arcgis.features.FeatureLayer(zips)
+        features = zips_layer.query()
+        features.save(temp_gdb, "zip_boundaries")
+        zips = os.path.join(temp_gdb, "zip_boundaries")
+
+    return cities, counties, zips
 
 
 
-def make_locator(input_smartfabric_gdb, output_locator_path, include_address_points=True, processed_address_points=None, include_parcels=True, cities=None, counties=None, tiger=None, parcels_with_addresses=None, temp_gdb=None):
+def make_locator(
+    input_smartfabric_gdb,
+    output_locator_path,
+    include_address_points=True,
+    processed_address_points=None,
+    include_parcels=True,
+    cities=None,
+    counties=None,
+    tiger=None,
+    zip_boundaries=None,
+    parcels_with_addresses=None,
+    temp_gdb=None,
+    portal_auth="pro",
+    portal=None,
+):
 
     if not temp_gdb:
-        make_temp_gdb(os.path.dirname(output_locator_path), "temp_parcels.gdb")
+        temp_gdb = make_temp_gdb(os.path.dirname(output_locator_path), "temp_parcels.gdb")
 
     # do this first because we've had multiple failures in the download process and better to fail before doing
     # the other setup work that takes time.
-    if cities or counties:
-        cities, counties = copy_remote_to_local(cities, counties, temp_gdb)
+    if cities or counties or zip_boundaries:
+        cities, counties, zip_boundaries = copy_remote_to_local(
+            cities=cities,
+            counties=counties,
+            zips=zip_boundaries,
+            temp_gdb=temp_gdb,
+            portal_auth=portal_auth,
+            portal=portal,
+        )
 
     # prepare and validate parcel inputs
     if include_parcels:
@@ -155,6 +187,10 @@ def make_locator(input_smartfabric_gdb, output_locator_path, include_address_poi
         else:
             if not arcpy.Exists(parcels_with_addresses):
                 raise ValueError(f"Parcels with addresses path provided ({parcels_with_addresses}) does not exist as a valid ArcGIS-readable dataset.")
+
+    # Prepare ZIP boundaries (optional)
+    if zip_boundaries and not arcpy.Exists(zip_boundaries):
+            raise ValueError(f"ZIP boundaries path provided ({zip_boundaries}) does not exist as a valid ArcGIS-readable dataset.")
 
     # prepare the data for the table mapping input
     table_mapping = []
@@ -193,6 +229,12 @@ def make_locator(input_smartfabric_gdb, output_locator_path, include_address_poi
     else:
         tiger_table = None
 
+    if zip_boundaries:
+        table_mapping.append((zip_boundaries, "Postal"))
+        zips_table = os.path.split(zip_boundaries)[1]
+    else:
+        zips_table = None
+
     if len(table_mapping) == 0:
         raise ValueError("No input tables provided for locator - likely misconfiguration of input flags")
 
@@ -200,11 +242,14 @@ def make_locator(input_smartfabric_gdb, output_locator_path, include_address_poi
     print(table_mapping)
 
     # See https://pro.arcgis.com/en/pro-app/latest/help/data/geocoding/locator-role-fields.htm for mapping here
-    values_mapping = _get_locator_fields(addresses_table=addresses_table,
-                                         cities_table=cities_table,
-                                         counties_table=counties_table,
-                                         parcels_table=parcels_table,
-                                         tiger_table=tiger_table)
+    values_mapping = _get_locator_fields(
+        addresses_table=addresses_table,
+        cities_table=cities_table,
+        counties_table=counties_table,
+        parcels_table=parcels_table,
+        tiger_table=tiger_table,
+        zips_table=zips_table,
+    )
 
     print(values_mapping)
     # TODO: Need to specify the actual table names in the field map for the items not in the workspace -
@@ -226,7 +271,14 @@ def make_locator(input_smartfabric_gdb, output_locator_path, include_address_poi
         )
 
 
-def _get_locator_fields(addresses_table=None, cities_table=None, counties_table=None, parcels_table=None, tiger_table=None) -> list[str]:
+def _get_locator_fields(
+    addresses_table=None,
+    cities_table=None,
+    counties_table=None,
+    parcels_table=None,
+    tiger_table=None,
+    zips_table=None,
+) -> list[str]:
     values_mapping = []
     print("Running!")
 
@@ -297,6 +349,12 @@ def _get_locator_fields(addresses_table=None, cities_table=None, counties_table=
             f'StreetAddress.POSTAL_EXT_RIGHT {tiger_table}.PLUS4R'
         ])
 
+    # ZIP boundaries (Postal role)
+    if zips_table:
+        values_mapping.extend([
+            f'Postal.POSTAL {zips_table}.ZIP_CODE',
+        ])
+
     # Counties layer
     if counties_table:
         values_mapping.extend([
@@ -306,4 +364,3 @@ def _get_locator_fields(addresses_table=None, cities_table=None, counties_table=
         ])
 
     return values_mapping
-

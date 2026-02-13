@@ -97,6 +97,7 @@ def main(cfg: BuildConfig) -> None:
             "cities": cfg.cities,
             "counties": cfg.counties,
             "tiger": cfg.tiger,
+            "zip_boundaries": cfg.zip_boundaries,
             "include_address_points": cfg.include_address_points,
             "include_parcels": cfg.include_parcels,
             "parcels_with_addresses": cfg.parcels_with_addresses,
@@ -152,6 +153,12 @@ CONTEXT_SETTINGS = {
     help="TIGER dataset as a local path.",
 )
 @click.option(
+    "--zip_boundaries",
+    default=None,
+    callback=_validate_path_or_url,
+    help="ZIP (postal) boundaries dataset as a local path or a URL (feature class, shapefile, etc.).",
+)
+@click.option(
     "--include_address_points/--no_include_address_points",
     default=True,
     show_default=True,
@@ -194,6 +201,7 @@ def cli(
     cities: Optional[str],
     counties: Optional[str],
     tiger: Optional[str],
+    zip_boundaries: Optional[str],
     include_address_points: bool,
     include_parcels: bool,
     parcels_with_addresses: Optional[str],
@@ -226,6 +234,7 @@ def cli(
         cities=cities,
         counties=counties,
         tiger=tiger,
+        zip_boundaries=zip_boundaries,
         include_address_points=include_address_points,
         include_parcels=include_parcels,
         parcels_with_addresses=parcels_with_addresses,
