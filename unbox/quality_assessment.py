@@ -23,12 +23,12 @@ import arcpy
 import numpy as np
 
 # Let's make some constants to reference for types of geocoders we'll compare with.
-CDT = {"name": "State", "field_name": "CDT"}
-ESRI = {"name": "StreetMapPremium", "field_name": "SMP"}
-BING = {"name": "Bing API", "field_name": "Bing"}
-AZURE = {"name": "Azure Maps", "field_name": "Azure"}
-GOOGLE = {"name": "Google Maps API", "field_name": "Google"}
-LIGHTBOX = {"name": "LightBox Geocoding API", "field_name": "LB"}
+CDT = {"name": "State", "field_name": "CDT", "id": 1}
+ESRI = {"name": "StreetMapPremium", "field_name": "SMP", "id": 2}
+BING = {"name": "Bing API", "field_name": "Bing", "id": 3}
+AZURE = {"name": "Azure Maps", "field_name": "Azure", "id": 4}
+GOOGLE = {"name": "Google Maps API", "field_name": "Google", "id": 5}
+LIGHTBOX = {"name": "LightBox Geocoding API", "field_name": "LB", "id": 6}
 
 
 def percentiles(table, pcts=(10, 25, 50, 75, 90, 95, 98, 99), fields=("NEAR_DIST_BING", "NEAR_DIST_SMP")):
@@ -65,17 +65,47 @@ class GeocodedDataset:
 class AddressDataset:
     text_path: Optional[Path, str]  = None
     geocodes: dict[str, GeocodedDataset] = dict()
-
+    comparisons: dict[str, dict] = dict()
     name: str = None
 
     def __init__(self, name: str, text_path: Optional[Path, str] = None) -> None:
         self.name = name
         self.text_path = text_path
 
-    def compare(self, base: GeocodedDataset, comparison: GeocodedDataset):
+    def compare(self, base: GeocodedDataset, comparison: GeocodedDataset, id_field: str = "ID"):
+        """
+        Compare two geocoded datasets and report on quality metrics.
+        """
         # do comparison work here
         # run near
+        comparison_field = f"NEAR_DIST_{comparison.geocoder['field_name']}"
+        arcpy.analysis.Near(base.points_path, comparison.points_path, method="GEODESIC", field_names=comparison_field)
+
         # report percentiles
+        pct_results = percentiles(base.points_path, fields=(comparison_field,))
+        print(f"Percentiles for {base} vs {comparison}:")
+        print(pct_results)
+
         # make connecting lines
+        merged_points = arcpy.management.Merge([base.points_path, comparison.points_path],
+                                               f"in_memory/merged_{base.geocoder}_{comparison.geocoder}")
+        connecting_lines = arcpy.management.PointsToLine(merged_points,
+                                                         f"in_memory/lines_{base.geocoder}_{comparison.geocoder}",
+                                                         id_field)
+
         # insert into map
-        print("SEE NOTES AT THE TOP")
+        #aprx = arcpy.mp.ArcGISProject("CURRENT")
+        #map_obj = aprx.activeMap
+        #map_obj.addDataFromPath(connecting_lines)
+
+        self.comparisons[base.geocoder["id"]] = {
+            comparison.geocoder["id"]: {
+                "points": base.points_path,
+                "near_field": comparison_field,
+                "comparison_points": comparison.points_path,
+                "lines": connecting_lines,
+                "percentiles": pct_results,
+            }
+        }
+        # make it work to reference it from the perspective of either geocoder when we want to look it up later
+        self.comparisons[comparison.geocoder["id"]][base.geocoder["id"]] = self.comparisons[base.geocoder["id"]][comparison.geocoder["id"]]
