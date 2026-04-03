@@ -23,6 +23,11 @@ import logging
 #           already been moved and isn't in "gdbs by size" anymore.
 # Add relationship classes and indexes back to the originals?
 
+# Additional items:
+# 1. Automate metadata on the GDB *and* the locator
+# 2. Produce a version compatible with older versions of ArcGIS Pro
+# 3. Output locator packages
+
 class GDBMerge(object):
     """
         Given a folder of zipped LightBox FGDB delivery files split by FIPS codes, merges them all into a single FGDB
