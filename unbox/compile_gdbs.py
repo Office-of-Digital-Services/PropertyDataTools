@@ -1,7 +1,9 @@
 import os
 import tempfile
+import traceback
 import zipfile  # this is probably slower than extracting beforehand
 import shutil
+import re
 
 import arcgisscripting
 import arcpy
@@ -146,8 +148,8 @@ class GDBMerge(object):
             "backward_label": "Parcel"
         },
     ]
-    VIEWS = [
-
+    VIEWS = []
+    """
         {  # this might be funky because we need to get only a single geometry column back, and FGDBs don't support
                 # a wonderful set of SQL operators like EXCEPT(). So, I think we need to enumerate the fields and drop
                 # the Shape and OBJECTID fields, the replace the value for the PLACEHOLDERS below with a comma separated string
@@ -159,7 +161,7 @@ class GDBMerge(object):
         "DropGeoms": ["Buildings", "Assessments", "BuildingParcelRelation"],  # which tables should have their geometries dropped?
         "Prefixes": {"Parcels": "", "Buildings": "prim_bldg_", "Assessments": "prim_assess_", "BuildingParcelRelation": "prim_bldg_parcel_rel_"}
         }
-    ]
+    ]"""
 
     """
         #    Turns out ArcGIS won't let us make a relationship class with the same origin/destination. We'll need to likely
@@ -220,15 +222,17 @@ class GDBMerge(object):
         ("Buildings", "county"),
         ("Buildings", "area_sqft"),
         ("Addresses", "FIPS_CODE"),
-        ("Addresses", "county"),
-        ("Addresses", "city"),
-        ("Addresses", "zip"),
-        ("Addresses", "resbus_usps"),
-        ("Addresses", "precision_code"),
-        ("Addresses", "address_confidence_score"),
-        ("Addresses", "is_primary_address"),
-        ("Addresses", "primary_address_lid"),
-        ("Addresses", "parent_address_lid"),
+        ("Addresses", "COUNTY"),
+        ("Addresses", "CITY"),
+        ("Addresses", "ZIP"),
+        ("Addresses", "RESBUS_USPS"),
+        ("Addresses", "PRECISION_CODE"),
+        ("Addresses", "ADDRESS_CONFIDENCE_SCORE"),
+        ("Addresses", "IS_PRIMARY_ADDRESS"),
+        ("Addresses", "PRIMARY_ADDRESS_LID"),
+        ("Addresses", "PARENT_ADDRESS_LID"),
+        ("Addresses", "DELIVERY_FLAG"),
+        # ("Addresses", "IS_VACANT"),  # boolean - may be a large index for not much value
         # ("Addresses", "building_name_usps"), It's possible this field is empty in CA?
         ("Assessments", "FIPS_CODE"),
         ("Assessments", "PARCEL_LID"),
@@ -310,6 +314,9 @@ class GDBMerge(object):
         self.cleanup()
 
     def _bypass_merge(self):
+        """
+            For invoking manually when testing after some kind of failure
+        """
         self._get_zip_sizes()
         self.get_source_tables()
 
@@ -355,7 +362,8 @@ class GDBMerge(object):
 
     def _zip_to_gdb_name(self, zip_name) -> str:
         gdb_zipname = os.path.split(zip_name)[1]
-        gdb_basename = f"{os.path.splitext(gdb_zipname)[0][:-9]}.gdb"  # the negative nine here strips off the datestamp from the filenames that isn't in zips. THis isn't robust, but works for now
+        gdb_basename = re.match("(.+\d{5}).*", gdb_zipname).groups()[0] + ".gdb"
+        #gdb_basename = f"{os.path.splitext(gdb_zipname)[0][:-9]}.gdb"  # the negative nine here strips off the datestamp from the filenames that isn't in zips. THis isn't robust, but works for now
         gdb = os.path.join(self.temp_folder, gdb_basename)
         return gdb
 
@@ -379,8 +387,12 @@ class GDBMerge(object):
                 self._drop_indexes(indexes)
 
             for table, field in indexes:  # it's a tuple, not a dict - 0 is table, 1 is field
-                logging.info(f"Creating index on {table}.{field}")
-                arcpy.management.AddIndex(table, field, f"idx_{field}")
+                index_name = f"idx_{field}"
+                logging.info(f"Creating index on {table}.{field}. Index name is {index_name}")
+                try:
+                    arcpy.management.AddIndex(table, [field,], index_name)
+                except arcgisscripting.ExecuteError:
+                    logging.warning(f"FAILED TO CREATE INDEX ON {table}.{field}. Reported error was {traceback.format_exc()}")
 
     def _drop_indexes(self, indexes: list[tuple[str, str]]):
         tables = {table: 1 for table, field in indexes}  # get the set of unique tables  - could also do this as list(set(list)))
@@ -393,7 +405,7 @@ class GDBMerge(object):
                 try:
                     arcpy.management.RemoveIndex(table, drop_indexes)
                 except arcpy.ExecuteError:
-                    pass  # it's OK to not remove it
+                    logging.debug(f"Failed to remove indexes. Exception was {traceback.format_exc()}")
 
     def recreate_spatial_indexes(self):
         with arcpy.EnvManager(workspace=self.output_gdb_path):
@@ -421,11 +433,17 @@ class GDBMerge(object):
         if drop_sys is None:
             drop_sys = list()
 
-        fields = [field.name for field in arcpy.ListFields(table)].sort()
+        fields = [field.name for field in arcpy.ListFields(table)]
+        fields.sort()  # in place sort
+
         if table in drop_sys:
             fields = list(set(fields) - {"OBJECTID", "SHAPE", "RID"})
-        source_fields = [f"{table}.{field}" for field in fields]  #  as {prefixes[table] + field}"
-        return ", ".join(source_fields)
+        if fields:
+            source_fields = [f"{table}.{field}" for field in fields]  #  as {prefixes[table] + field}"
+            return ", ".join(source_fields)
+        else:
+            logging.warning(f"No fields returned for table {table}")
+            return ""
 
     def create_views(self):
         with arcpy.EnvManager(workspace=self.output_gdb_path):

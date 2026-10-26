@@ -1,17 +1,17 @@
-import os, shutil
+import os, shutil, sys
 import datetime
 from datetime import datetime
 
 from unbox.compile_gdbs import GDBMerge
 from unbox import build_locator
 import logging
-import sys
+
 
 REMOVE_EXISTING = False
 
 #PARCELS_WITH_ADDRESSES_OVERRIDE = r"C:\Users\nick.santos\Downloads\LBX_Delivery_20251015\PROFESSIONAL_FGDB\processing_20260117\parcels_with_addresses_tek_xes6\temp_parcels.gdb\parcels_with_addresses"
-suffix = "20260120"
-delivery_folder = r"C:\Users\nick.santos\Downloads\LBX_DELIVERY_20260120\PROFESSIONAL_FGDB"
+suffix = "20261020"
+delivery_folder = r"C:\Users\nick.santos\Downloads\LightBox Deliveries 2016-10\LBX_DELIVERY_20261020\PROFESSIONAL_FGDB"
 gdb_name = f"full_state_smartfabric_{suffix}.gdb"
 cities = "https://services3.arcgis.com/uknczv4rpevve42E/arcgis/rest/services/California_Cities_and_Identifiers_Blue_Version_view/FeatureServer/2"
 counties = "https://services3.arcgis.com/uknczv4rpevve42E/arcgis/rest/services/California_County_Boundaries_and_Identifiers_Blue_Version_view/FeatureServer/1"
@@ -50,6 +50,7 @@ m.run_merge()
 
 build_time = datetime.datetime.now()
 print(f"Build completed at {build_time}")
+sys.exit()
 print(f"Beginning geocoder build")
 
 build_locator.make_locator(output_gdb, os.path.join(temp_folder, f"locator_{suffix}.loc"),
