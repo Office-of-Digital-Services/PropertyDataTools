@@ -39,6 +39,13 @@ Prefer clear, expressive code over short code. Include comments
 regularly throughout all code to express the intent of items. Variable names
 should clearly express the intent and usage of the variables.
 
+When investigating potential approaches to a request, feature, or problem, please output scripts
+into .junie/investigations and bundle multiple into a single request when possible. That will reduce
+the number of approval prompts, which will reduce wait time if I do not approve immediately. Please only
+bundle requests to run code if each one may add information you need, not as a contingency for one working and the
+other not working (to reduce tokens). Bundle requests to run code if they are related to the same problem or feature.
+Please name the code with a sequential number, starting with 1 and a short description (e.g. 1_<description>.py).
+
 Write documentation as markdown in the `documentation` folder. For interactive elements,
 write documentation for an end user. For API elements, write documentation for a developer describing
 key points to interface with the code, how to use it, and considerations.
