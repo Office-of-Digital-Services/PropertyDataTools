@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import sys
+import logging
 import tempfile
 
 from dataclasses import dataclass
@@ -8,6 +10,9 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 import arcpy
 import arcgis
+
+
+APPROX_COMMAND = " ".join(sys.argv[:])
 
 @dataclass
 class BuildConfig:
@@ -158,6 +163,7 @@ def make_locator(
     temp_gdb=None,
     portal_auth="pro",
     portal=None,
+    produce_compat=True
 ):
 
     if not temp_gdb:
@@ -255,6 +261,20 @@ def make_locator(
     # TODO: Need to specify the actual table names in the field map for the items not in the workspace -
     #  this just captures the creation of the test locator
 
+    create_locator_and_package(input_smartfabric_gdb, output_locator_path, table_mapping, values_mapping)
+    if produce_compat:
+        create_locator_and_package(input_smartfabric_gdb,
+                               output_locator_path.replace(".loc", "_compat30.loc"),
+                               table_mapping,
+                               values_mapping,
+                               version_compatibility="V3_0_TO_3_3")
+
+def create_locator_and_package(input_smartfabric_gdb, output_locator_path, table_mapping: str,
+                               values_mapping: list[str], version_compatibility: str = "CURRENT_VERSION") -> None:
+
+    if version_compatibility not in ["CURRENT_VERSION", "V3_0_TO_3_3"]:
+        logging.warning(f"Unrecognized version compatibility option {version_compatibility}. Using value, but it may produce unexpected results.")
+
     print("Building locator")
     with arcpy.EnvManager(workspace=input_smartfabric_gdb):
         arcpy.geocoding.CreateLocator(
@@ -267,8 +287,14 @@ def make_locator(
             alternate_field_mapping=None,
             custom_output_fields=None,
             precision_type="GLOBAL_EXTRA_HIGH",
-            version_compatibility="CURRENT_VERSION"
+            version_compatibility=version_compatibility
         )
+
+        arcpy.geocoding.PackageLocator(in_locator=output_locator_path,
+                                       output_file=output_locator_path.replace(".loc", ".gcpk"),
+                                       summary=f"California statewide locator, built based on LightBox, TIGER, and boundary data by the CDT GIS team. Build command was {APPROX_COMMAND}",
+                                       tags="cdt, locator, lightbox, tiger, cities"
+                                       )
 
 
 def _get_locator_fields(
