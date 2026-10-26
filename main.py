@@ -11,7 +11,7 @@ REMOVE_EXISTING = False
 
 #PARCELS_WITH_ADDRESSES_OVERRIDE = r"C:\Users\nick.santos\Downloads\LBX_Delivery_20251015\PROFESSIONAL_FGDB\processing_20260117\parcels_with_addresses_tek_xes6\temp_parcels.gdb\parcels_with_addresses"
 suffix = "20261020"
-delivery_folder = r"C:\Users\nick.santos\Downloads\LightBox Deliveries 2016-10\LBX_DELIVERY_20261020\PROFESSIONAL_FGDB"
+delivery_folder = r"C:\Users\nick.santos\Downloads\LightBox Deliveries 2026-10\LBX_DELIVERY_20261020\PROFESSIONAL_FGDB"
 gdb_name = f"full_state_smartfabric_{suffix}.gdb"
 cities = "https://services3.arcgis.com/uknczv4rpevve42E/arcgis/rest/services/California_Cities_and_Identifiers_Blue_Version_view/FeatureServer/2"
 counties = "https://services3.arcgis.com/uknczv4rpevve42E/arcgis/rest/services/California_County_Boundaries_and_Identifiers_Blue_Version_view/FeatureServer/1"
