@@ -199,3 +199,13 @@ Example Response:
   ]
 }
 ```
+
+## License
+This project was written as a public domain work of the State of California. Contributions to this repository must be allowed to be dedicated to the public domain as well.
+
+## GenAI Disclosure and Contributions
+This project was first coded fully by hand, then with generative AI assistants and agents (large language models/LLMs) using a desktop-based agent backed by CDT's Poppy GenAI environment. It has used a mix of Anthropic Claude and Gemini Flash 3.7.
+
+Anyone wishing to submit pull requests coded either on their own, with GenAI, or with a mix, may do so, but the generative AI use must be disclosed in the pull request along with some approximation of how much of the code was GenAI (fully, mostly, partially, none). Ultimately, the software engineer submitting the code is the person responsible for the code's quality and correctness. Low quality submissions reflect on the person in addition to the model and it is not sufficient to deflect responsibility to the tool. That means you must understand what is in the code you are contributing, and if you do not have the software engineering experience to evaluate its quality - but you believe it to be working, performant, and correct - state that you need help reviewing the quality in your pull request so we know what to expect.
+
+Finally, a system prompt for AI agents is located in .junie/AGENTS.md - if you code with an AI agent, please review the instructions in that prompt and determine which parts make sense to provide to your own agent.

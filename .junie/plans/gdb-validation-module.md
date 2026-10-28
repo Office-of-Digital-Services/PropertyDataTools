@@ -493,7 +493,7 @@ Two tiers, because the module is itself code that must be trusted before its ver
 
 # Delivery Steps
 
-###   Step 1: Build the validation core and expectations layer
+### ✓ Step 1: Build the validation core and expectations layer
 A `unbox/validation` package exists whose expectations are derived from `GDBMerge`, with a read-only arcpy facade and a working registry, all covered by unit tests that run without arcpy.
 
 - Create `unbox/validation/__init__.py`, `models.py`, `expectations.py`, `gdb_access.py`, `registry.py`, and `runner.py`.
@@ -507,7 +507,7 @@ A `unbox/validation` package exists whose expectations are derived from `GDBMerg
 - Add `tests/test_validation_expectations.py` and `tests/test_validation_registry_runner.py` covering expectation derivation counts, the `rc_` prefix, duplicate registration, exception isolation, category filtering, and `overall_status` precedence.
 - Add `tests/test_validation_read_only.py` scanning the package source to assert no write-capable arcpy call appears and that `arcpy` is imported only in `gdb_access.py`.
 
-###   Step 2: Add the reporting layer and the validation CLI
+### ✓ Step 2: Add the reporting layer and the validation CLI
 A validation run can be invoked from the command line end-to-end and writes an HTML, JSON, and text report, even with zero checks registered.
 
 - Create `unbox/validation/reporting/` with `html_report.py`, `json_report.py`, `text_report.py`, and `templates/report.html.j2`.
@@ -520,7 +520,7 @@ A validation run can be invoked from the command line end-to-end and writes an H
 - Exit non-zero when the run's `overall_status` is `FAIL`.
 - Add `tests/test_validation_reporting.py` covering HTML rendering from a synthetic run, JSON round-trip fidelity, text digest content, and the empty-run and all-`ERROR` edge cases.
 
-###   Step 3: Implement count parity checks across counties and themes
+### ✓ Step 3: Implement count parity checks across counties and themes
 The report shows, for all ten themes and every county, whether source and output row counts agree, with LA reconciled arithmetically.
 
 - Create `unbox/validation/checks/counts.py` and wire `checks/__init__.py` to import it so registration happens on package import.
@@ -532,7 +532,7 @@ The report shows, for all ten themes and every county, whether source and output
 - Handle a source GDB missing a theme as a per-row `SKIP` with a reason rather than aborting the sweep.
 - Add `tests/test_validation_checks_counts.py` driving the fake accessor through a healthy fixture plus corrupted fixtures for a missing county, a doubled county count, an unexpected FIPS code, and a perturbed base-county total.
 
-###   Step 4: Implement schema, index, and referential integrity checks
+### ✓ Step 4: Implement schema, index, and referential integrity checks
 The report confirms the output schema matches the sources, every declared index and relationship class exists, and sampled relationship keys resolve.
 
 - Create `unbox/validation/checks/schema.py` with `schema.field_conformance` diffing output field names, types, and lengths against a reference source county, reporting missing, extra, and mismatched fields, and allowing the known `RID`-instead-of-`OBJECTID` difference on attributed relationship classes.
@@ -545,7 +545,7 @@ The report confirms the output schema matches the sources, every declared index 
 - Report orphan rate per relation and fail above `--orphan_tolerance`; report an existing but empty relationship class as `WARN` rather than `FAIL`.
 - Add `tests/test_validation_checks_schema.py` and `tests/test_validation_checks_integrity.py` covering a removed `idx_CITY`, mixed-case index matching, a missing `FDO_SHAPE`, a wrong relationship origin key, the `RID` allowance, a clean orphan sweep, a 3-of-500 orphan failure, and null-tolerant primary key resolution.
 
-###   Step 5: Implement query performance checks using indexed-vs-unindexed ratios
+### ✓ Step 5: Implement query performance checks using indexed-vs-unindexed ratios
 The report quantifies indexed attribute and spatial query speed against a full-scan baseline and fails when an index is not delivering.
 
 - Create `unbox/validation/checks/performance.py`.
@@ -557,7 +557,7 @@ The report quantifies indexed attribute and spatial query speed against a full-s
 - Record absolute cold and warm seconds plus result counts for every timing in `CheckResult.details` regardless of verdict, so the report doubles as a performance log.
 - Add `tests/test_validation_checks_performance.py` covering a passing ratio, a failing ratio, the missing-control `SKIP`, the mismatched-cardinality `SKIP`, the zero-rows `SKIP`, and the presence of both cold and warm timings.
 
-###   Step 6: Wire validation into pytest and main.py, then document and run it
+### ✓ Step 6: Wire validation into pytest and main.py, then document and run it
 Validation runs automatically after a merge, surfaces as pytest failures, is documented, and has been executed against the full statewide geodatabase.
 
 - Add `tests/test_validation_data_quality.py` with a session-scoped fixture that executes one real `run_validation` against the 20261020 output GDB and source folder, then parametrises over the resulting `CheckResult` list so each check appears as its own named test.

@@ -1,0 +1,275 @@
+{#
+    Self-contained validation report.
+
+    Everything - CSS, layout, data - lives in this one file. No stylesheet links, no
+    script tags, no web fonts, no CDN. The report is written to a network folder and
+    opened by double-clicking it, often on a machine with no internet access, so an
+    external reference would simply render as a broken page.
+
+    The expand/collapse behaviour uses <details>/<summary>, which is native HTML and
+    needs no JavaScript.
+#}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Geodatabase Validation Report - {{ run.overall_status.value | upper }}</title>
+<style>
+    /* Deliberately plain and print-friendly. Colour carries meaning here, so each
+       status also carries its own text label - nothing depends on colour alone. */
+    body {
+        font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+        font-size: 14px;
+        line-height: 1.5;
+        color: #222;
+        margin: 0;
+        padding: 0 0 48px 0;
+        background: #f7f7f9;
+    }
+    .page { max-width: 1400px; margin: 0 auto; padding: 0 24px; }
+
+    header.banner { padding: 24px; margin-bottom: 24px; color: #fff; }
+    header.banner h1 { margin: 0 0 4px 0; font-size: 24px; font-weight: 600; }
+    header.banner .verdict { font-size: 32px; font-weight: 700; letter-spacing: 1px; }
+    header.banner .subtitle { opacity: 0.9; font-size: 13px; }
+
+    .banner-pass  { background: #1d7a3e; }
+    .banner-fail  { background: #a61b1b; }
+    .banner-warn  { background: #a8690a; }
+    .banner-skip  { background: #4a5568; }
+    .banner-error { background: #7a1d6e; }
+
+    .meta-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 12px;
+        margin-bottom: 24px;
+    }
+    .card {
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 12px 16px;
+    }
+    .card .label { font-size: 11px; text-transform: uppercase; color: #666; letter-spacing: 0.5px; }
+    .card .value { font-size: 16px; font-weight: 600; word-break: break-all; }
+
+    .tally { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+    .tally .chip {
+        padding: 6px 14px;
+        border-radius: 14px;
+        font-weight: 600;
+        font-size: 13px;
+        color: #fff;
+    }
+
+    .badge {
+        display: inline-block;
+        min-width: 58px;
+        text-align: center;
+        padding: 2px 8px;
+        border-radius: 3px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        color: #fff;
+    }
+    .badge-pass  { background: #1d7a3e; }
+    .badge-fail  { background: #a61b1b; }
+    .badge-warn  { background: #a8690a; }
+    .badge-skip  { background: #4a5568; }
+    .badge-error { background: #7a1d6e; }
+
+    h2.category {
+        margin: 32px 0 12px 0;
+        font-size: 18px;
+        border-bottom: 2px solid #ccc;
+        padding-bottom: 6px;
+    }
+
+    details.check {
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        margin-bottom: 8px;
+    }
+    details.check > summary {
+        cursor: pointer;
+        padding: 10px 14px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+    details.check > summary:hover { background: #f0f0f3; }
+    details.check .check-title { font-weight: 600; }
+    details.check .check-id { color: #666; font-family: Consolas, monospace; font-size: 12px; }
+    details.check .check-timing { color: #666; font-size: 12px; margin-left: auto; }
+    details.check .body { padding: 4px 14px 16px 14px; border-top: 1px solid #eee; }
+
+    .summary-text { margin: 10px 0; }
+
+    table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 10px; }
+    th, td { border: 1px solid #ddd; padding: 5px 9px; text-align: left; vertical-align: top; }
+    th { background: #eef0f4; font-weight: 600; position: sticky; top: 0; }
+    tr:nth-child(even) td { background: #fafafa; }
+    td.numeric { text-align: right; font-variant-numeric: tabular-nums; }
+
+    .row-status-fail td { background: #fdeaea !important; }
+    .row-status-warn td { background: #fdf4e3 !important; }
+    .row-status-skip td { background: #f0f1f4 !important; }
+
+    .details-list { margin: 10px 0; font-size: 13px; }
+    .details-list dt { font-weight: 600; color: #444; float: left; clear: left; width: 220px; }
+    .details-list dd { margin: 0 0 4px 230px; font-family: Consolas, monospace; word-break: break-word; }
+
+    pre.traceback {
+        background: #2b2b2b; color: #f0f0f0; padding: 12px;
+        overflow-x: auto; font-size: 12px; border-radius: 3px;
+    }
+    .table-note { color: #666; font-size: 12px; font-style: italic; margin-top: 6px; }
+    footer { margin-top: 36px; color: #666; font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+
+<header class="banner banner-{{ run.overall_status.value }}">
+    <div class="page">
+        <h1>Geodatabase Validation Report</h1>
+        <div class="verdict">{{ run.overall_status.value | upper }}</div>
+        <div class="subtitle">
+            {{ run.results | length }} check{{ '' if run.results | length == 1 else 's' }} run against
+            {{ run.output_gdb }}
+        </div>
+    </div>
+</header>
+
+<div class="page">
+
+    {# ---------- Run metadata ---------- #}
+    <div class="meta-grid">
+        <div class="card">
+            <div class="label">Output geodatabase</div>
+            <div class="value">{{ run.output_gdb }}</div>
+        </div>
+        <div class="card">
+            <div class="label">Source folder</div>
+            <div class="value">{{ run.configuration.get('source_folder') or 'not supplied' }}</div>
+        </div>
+        <div class="card">
+            <div class="label">Started</div>
+            <div class="value">{{ run.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</div>
+        </div>
+        <div class="card">
+            <div class="label">Elapsed</div>
+            <div class="value">{{ format_duration(run.duration_seconds) }}</div>
+        </div>
+    </div>
+
+    {# ---------- Status tally ---------- #}
+    <div class="tally">
+        {% for status, count in status_counts %}
+        <span class="chip badge-{{ status.value }}">{{ status.value | upper }}: {{ count }}</span>
+        {% endfor %}
+    </div>
+
+    {# ---------- Run configuration ---------- #}
+    <details class="check">
+        <summary><span class="check-title">Run configuration</span></summary>
+        <div class="body">
+            <dl class="details-list">
+                {% for key, value in run.configuration.items() %}
+                <dt>{{ key }}</dt>
+                <dd>{{ value if value not in (None, '', []) else '(not set)' }}</dd>
+                {% endfor %}
+            </dl>
+        </div>
+    </details>
+
+    {# ---------- Results, grouped by category ---------- #}
+    {% if not run.results %}
+        <h2 class="category">No checks were run</h2>
+        <p>
+            This run produced no results. That usually means every check was filtered
+            out by a <code>--categories</code> or <code>--check_ids</code> option, or
+            that the check registry was not populated.
+        </p>
+    {% endif %}
+
+    {% for category_name, category_results in grouped_results.items() %}
+    <h2 class="category">{{ category_name | capitalize }}
+        <span style="font-weight:400;font-size:14px;color:#666;">
+            ({{ category_results | length }} check{{ '' if category_results | length == 1 else 's' }})
+        </span>
+    </h2>
+
+        {% for result in category_results %}
+        {# Problems are expanded by default so a reader does not have to hunt for them. #}
+        <details class="check" {% if result.status.value in ('fail', 'error', 'warn') %}open{% endif %}>
+            <summary>
+                <span class="badge badge-{{ result.status.value }}">{{ result.status.value | upper }}</span>
+                <span class="check-title">{{ result.title }}</span>
+                <span class="check-id">{{ result.check_id }}</span>
+                <span class="check-timing">{{ '%.2f' | format(result.duration_seconds) }}s</span>
+            </summary>
+            <div class="body">
+                <p class="summary-text">{{ result.summary }}</p>
+
+                {% if result.details %}
+                <dl class="details-list">
+                    {% for key, value in result.details.items() %}
+                        {% if key == 'traceback' %}
+                        <dt>traceback</dt>
+                        <dd><pre class="traceback">{{ value }}</pre></dd>
+                        {% else %}
+                        <dt>{{ key }}</dt>
+                        <dd>{{ value }}</dd>
+                        {% endif %}
+                    {% endfor %}
+                </dl>
+                {% endif %}
+
+                {% if result.rows %}
+                    {% set visible_rows = result.rows[:max_rows_per_table] %}
+                    <table>
+                        <thead>
+                            <tr>
+                            {% for column_name in result.row_column_names %}
+                                <th>{{ column_name }}</th>
+                            {% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for row in visible_rows %}
+                            {# A row may carry its own status, which tints it in the table. #}
+                            <tr class="row-status-{{ (row.get('status') or '') | lower }}">
+                            {% for column_name in result.row_column_names %}
+                                {% set cell = row.get(column_name) %}
+                                <td class="{{ 'numeric' if is_numeric(cell) else '' }}">
+                                    {{- '' if cell is none else cell -}}
+                                </td>
+                            {% endfor %}
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                    {% if result.rows | length > max_rows_per_table %}
+                    <p class="table-note">
+                        Showing the first {{ max_rows_per_table }} of
+                        {{ result.rows | length }} rows. The complete set is in
+                        <code>validation_results.json</code>.
+                    </p>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </details>
+        {% endfor %}
+    {% endfor %}
+
+    <footer>
+        Generated {{ generated_at.strftime('%Y-%m-%d %H:%M:%S') }} by the PropertyDataTools
+        validation module. All operations performed were read-only.
+    </footer>
+</div>
+
+</body>
+</html>
