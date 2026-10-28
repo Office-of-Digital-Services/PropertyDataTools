@@ -1,6 +1,5 @@
 import os, shutil, sys
 import datetime
-from datetime import datetime
 
 from unbox.compile_gdbs import GDBMerge
 from unbox import build_locator
@@ -8,6 +7,11 @@ import logging
 
 
 REMOVE_EXISTING = False
+
+# Run the read-only validation suite once the merge finishes, writing an HTML, JSON
+# and text report into the processing folder. Validation never modifies the
+# geodatabase, so it cannot endanger the 8-24 hour build; set this to False to skip it.
+RUN_VALIDATION = True
 
 #PARCELS_WITH_ADDRESSES_OVERRIDE = r"C:\Users\nick.santos\Downloads\LBX_Delivery_20251015\PROFESSIONAL_FGDB\processing_20260117\parcels_with_addresses_tek_xes6\temp_parcels.gdb\parcels_with_addresses"
 suffix = "20261020"
@@ -50,6 +54,26 @@ m.run_merge()
 
 build_time = datetime.datetime.now()
 print(f"Build completed at {build_time}")
+
+if RUN_VALIDATION:
+    # Imported here so that a machine running only the merge never pays the import
+    # cost, and so an unexpected problem in validation cannot prevent the build from
+    # starting.
+    from unbox.validation import build_context, run_validation
+    from unbox.validation.reporting import write_reports
+
+    print(f"Validating the merged geodatabase (read-only)")
+
+    validation_context = build_context(
+        output_gdb=output_gdb,
+        source_folder=temp_folder,
+    )
+    validation_run = run_validation(validation_context)
+    written_reports = write_reports(validation_run, report_dir=temp_folder)
+
+    print(f"Validation finished with status {validation_run.overall_status}")
+    print(f"Validation report: {written_reports.get('html')}")
+
 sys.exit()
 print(f"Beginning geocoder build")
 
